@@ -124,43 +124,43 @@ servlet的输入参数为HttpServletRequest，Portlets的输入参数为ActionRe
 ###由RequestContext数据源得到解析后的数据集合 FileItemIterator
 
 
-FileItemIterator内容如下：
+-	FileItemIterator内容如下：
 	
-	public interface FileItemIterator {
-	    boolean hasNext() throws FileUploadException, IOException;
-	    FileItemStream next() throws FileUploadException, IOException;
-	}
+		public interface FileItemIterator {
+		    boolean hasNext() throws FileUploadException, IOException;
+		    FileItemStream next() throws FileUploadException, IOException;
+		}
 
-这就是一个轮询器，可以看成是FileItemStream的集合。而FileItemStream则是之前上传文件格式内容
+	这就是一个轮询器，可以看成是FileItemStream的集合。
 
-	------WebKitFormBoundary77tsMdWQBKrQOSsV
-	Content-Disposition: form-data; name="user"
+-	FileItemStream则是之前上传文件格式内容
+	
+		------WebKitFormBoundary77tsMdWQBKrQOSsV
+		Content-Disposition: form-data; name="user"
+	
+		lg
+	
+	或者
+	
+		------WebKitFormBoundary77tsMdWQBKrQOSsV
+		Content-Disposition: form-data; name="myFile"; filename="萌芽.jpg"
+		Content-Type: image/jpeg
+	
+		(文件内容)
+	
+	的封装，代码如下
 
-	lg
-
-或者
-
-	------WebKitFormBoundary77tsMdWQBKrQOSsV
-	Content-Disposition: form-data; name="myFile"; filename="萌芽.jpg"
-	Content-Type: image/jpeg
-
-	(文件内容)
-
-的封装
-
-FileItemStream内容如下：
-
-	public interface FileItemStream extends FileItemHeadersSupport {
-		/*流中包含了数值或者文件的内容*/
-	    InputStream openStream() throws IOException;
-	    String getContentType();
-		/*用来存放文件名，不是文件字段则为null*/
-	    String getName();
-		/*对应input标签中的name属性*/
-	    String getFieldName();
-		/*标识该字段是否是一般的form字段还是文件字段*/
-	    boolean isFormField();
-	}
+		public interface FileItemStream extends FileItemHeadersSupport {
+			/*流中包含了数值或者文件的内容*/
+		    InputStream openStream() throws IOException;
+		    String getContentType();
+			/*用来存放文件名，不是文件字段则为null*/
+		    String getName();
+			/*对应input标签中的name属性*/
+		    String getFieldName();
+			/*标识该字段是否是一般的form字段还是文件字段*/
+		    boolean isFormField();
+		}
 
 然后我们来具体看下由RequestContext如何解析成一个FileItemIterator的：
 
