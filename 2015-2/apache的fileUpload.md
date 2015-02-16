@@ -57,7 +57,75 @@ form表单提交内容如下
 
 上述两点才能保证浏览器正常的进行文件上传。
 
+#apache fileupload的解析
+
+有了上述文件上传的组织格式，我们就需要合理的设计后台的解析方式，下面来看下apache fileupload的使用。先来看下整体的流程图
+![apache fileUpload整体流程图][4]
+
+
+##Servlets and Portlets
+
+apache fileupload分Servlets and Portlets两种情形来处理。Servlet我们很熟悉，而Portlets我也没用过，可自行去搜索。
+
+###判断request是否是Multipart
+
+对于HttpServletRequest来说，另一个不再说明，自行查看源码，判断规则如下：
+
+-	是否是post请求
+-	contentType是否以multipart/开头
+
+见源码：
+
+	public static final boolean isMultipartContent(
+            HttpServletRequest request) {
+        if (!POST_METHOD.equalsIgnoreCase(request.getMethod())) {
+            return false;
+        }
+        return FileUploadBase.isMultipartContent(new ServletRequestContext(request));
+    }
+	public static final boolean isMultipartContent(RequestContext ctx) {
+        String contentType = ctx.getContentType();
+        if (contentType == null) {
+            return false;
+        }
+        if (contentType.toLowerCase(Locale.ENGLISH).startsWith(MULTIPART)) {
+            return true;
+        }
+        return false;
+    }
+
+###对request进行封装
+
+servlet的输入参数为HttpServletRequest，Portlets的输入参数为ActionRequest，数据来源不同，为了统一方便后面的数据处理，引入了RequestContext接口，来统一一下目标数据的获取，接口类图如下
+![apache fileUpload整体流程图][5]
+
+
+此时RequestContext就作为了数据源，不再与HttpServletRequest和ActionRequest打交道。
+
+上述的实现过程是由FileUpload的子类ServletFileUpload和PortletFileUpload分别完成包装的，他们的类图如下
+![apache fileUpload整体流程图][5]
+
+源码展示如下：
+
+-	ServletFileUpload类
+	
+		public List<FileItem> parseRequest(HttpServletRequest request)
+    		throws FileUploadException {
+        	return parseRequest(new ServletRequestContext(request));
+    	}
+
+-	PortletFileUpload类
+
+		public List<FileItem> parseRequest(ActionRequest request)
+            throws FileUploadException {
+        	return parseRequest(new PortletRequestContext(request));
+    	}
+
+###由RequestContext数据源得到解析后的数据集合 FileItemIterator
+
 
   [1]: http://static.oschina.net/uploads/space/2015/0216/111637_pAjl_2287728.png
   [2]: http://static.oschina.net/uploads/space/2015/0216/112841_9nQm_2287728.png
   [3]: http://static.oschina.net/uploads/space/2015/0216/121610_rQpt_2287728.png
+  [4]: http://static.oschina.net/uploads/space/2015/0216/172522_DESE_2287728.png
+  [5]: http://static.oschina.net/uploads/space/2015/0216/172522_DESE_2287728.png
