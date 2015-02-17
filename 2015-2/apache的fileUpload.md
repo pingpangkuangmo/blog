@@ -358,10 +358,10 @@ new了一个FileItemIteratorImpl，来看下具体的过程：
 
 ###遍历FileItemIterator，通过FileItemFactory工厂将每一个item转化成FileItem对象
 
-其他应用其实就可以遍历FileItemIteratorImpl拿到每一项FileItemStreamImpl的解析数据了。这时候的只是这时候数据
+其他应用其实就可以遍历FileItemIteratorImpl拿到每一项FileItemStreamImpl的解析数据了。只是这时候数据
 
 -	存储在内存中的
--	每个FileItemStreamImpl都是共享一个总的流，不能被重复读取，即FileItemIteratorImpl只能被遍历一次
+-	每个FileItemStreamImpl都是共享一个总的流，不能被重复读取
 
 我们想把这些文件数据存在临时文件中，就需要使用使用FileItemFactory来进行下转化成FileItem。每个FileItem才是相互独立的，而FileItemStreamImpl则不是，每个FileItem也是对应上传文件格式中的每一项，如下
 	
@@ -390,7 +390,7 @@ FileItemFactory的实现类DiskFileItemFactory即将数据存储在硬盘上，�
         return result;
     }
 
-我们从上面可以看到，其实FileItemFactory的createItem方法，并没有为FileItem的流赋值。再回顾下上文parseRequest方法的源代码
+我们从上面可以看到，其实FileItemFactory的createItem方法，并没有为FileItem的流赋值。再回顾下上文parseRequest方法的源代码，赋值发生在这里
 	
 	FileItemIterator iter = getItemIterator(ctx);
     FileItemFactory fac = getFileItemFactory();
@@ -428,9 +428,31 @@ FileItemFactory的实现类DiskFileItemFactory即将数据存储在硬盘上，�
         return dfos;
     }
 
-这里又用到了commons-io包中的DeferredFileOutputStream类，不再说明，自行去看。至此，FileItem都被创建出来了，整个过程就结束了。
+	protected File getTempFile() {
+        if (tempFile == null) {
+            File tempDir = repository;
+            if (tempDir == null) {
+                tempDir = new File(System.getProperty("java.io.tmpdir"));
+            }
 
-#结束语 这篇文章完成了上一篇文章的前两个部分，接下来就是SpringMVC自己如何将上述功能加入到自己的框架中来。
+            String tempFileName = format("upload_%s_%s.tmp", UID, getUniqueId());
+
+            tempFile = new File(tempDir, tempFileName);
+        }
+        return tempFile;
+    }
+
+getTempFile()会根据FileItemFactory的临时文件目录配置repository，创建一个临时文件，用于上传文件。
+这里又用到了commons-io包中的DeferredFileOutputStream类。
+
+-	当数据数量小于sizeThreshold阈值时，存储在内存中
+-	当数据数量大于sizeThreshold阈值时，存储到传入的临时文件中
+
+至此，FileItem都被创建出来了，整个过程就结束了。
+
+#结束语 
+
+这篇文章完成了上一篇文章的前两个部分，接下来就是SpringMVC自己如何将上述功能加入到自己的框架中来。
 
 
   [1]: http://static.oschina.net/uploads/space/2015/0216/111637_pAjl_2287728.png
