@@ -69,7 +69,7 @@ form表单提交内容如下
 
 apache fileupload分Servlets and Portlets两种情形来处理。Servlet我们很熟悉，而Portlets我也没用过，可自行去搜索。
 
-###判断request是否是Multipart
+##判断request是否是Multipart
 
 对于HttpServletRequest来说，另一个不再说明，自行查看源码，判断规则如下：
 
@@ -96,7 +96,7 @@ apache fileupload分Servlets and Portlets两种情形来处理。Servlet我们�
         return false;
     }
 
-###对request进行封装
+##对request进行封装
 
 servlet的输入参数为HttpServletRequest，Portlets的输入参数为ActionRequest，数据来源不同，为了统一方便后面的数据处理，引入了RequestContext接口，来统一一下目标数据的获取。
 	
@@ -186,7 +186,7 @@ servlet的输入参数为HttpServletRequest，Portlets的输入参数为ActionRe
 -	根据RequestContext数据源得到解析后的数据集合 FileItemIterator
 -	遍历FileItemIterator中的每个item，类型为FileItemStreamImpl，使用FileItemFactory工厂类来将每个FileItemStreamImpl转化成最终的FileItem
 
-###由RequestContext数据源得到解析后的数据集合 FileItemIterator
+##由RequestContext数据源得到解析后的数据集合 FileItemIterator
 
 
 -	FileItemIterator内容如下：
@@ -356,7 +356,7 @@ new了一个FileItemIteratorImpl，来看下具体的过程：
 -	每次调用FileItemIteratorImpl的next()方法，就会返回当前FileItemStreamImpl属性的值
 -	创建的每个FileItemStreamImpl都会共享FileItemIteratorImpl的MultipartStream总流，仅仅更新了要读取的起始位置
 
-###遍历FileItemIterator，通过FileItemFactory工厂将每一个item转化成FileItem对象
+##遍历FileItemIterator，通过FileItemFactory工厂将每一个item转化成FileItem对象
 
 其他应用其实就可以遍历FileItemIteratorImpl拿到每一项FileItemStreamImpl的解析数据了。只是这时候数据
 
