@@ -43,6 +43,8 @@ form表单提交内容如下
 
 中指明了分隔符的内容。
 
+更加详细的上传格式还是参看 [rfc文档](http://www.ietf.org/rfc/rfc1867.txt)
+
 #文件上传注意点：	
 
 -	一定是post提交，如果换成get提交，则浏览器默认仅仅把文件名作为属性值来上传，不会上传文件内容，如下
@@ -96,7 +98,7 @@ apache fileupload分Servlets and Portlets两种情形来处理。Servlet我们�
         return false;
     }
 
-##对request进行封装
+##对request封装成RequestContext
 
 servlet的输入参数为HttpServletRequest，Portlets的输入参数为ActionRequest，数据来源不同，为了统一方便后面的数据处理，引入了RequestContext接口，来统一一下目标数据的获取。
 	
