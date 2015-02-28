@@ -170,7 +170,8 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 	这里简单提下，对于@RequestParam注解是由RequestParamMethodArgumentResolver来进行处理的，是它进行了特殊处理，当@RequestParam修饰的类型为MultipartFile或者javax.servlet.http.Part（后面再详细说此Part）时进行特殊处理，如下
 
 		@Override
-		protected Object resolveName(String name, MethodParameter parameter, NativeWebRequest webRequest) throws Exception {
+		protected Object resolveName(String name, MethodParameter parameter, NativeWebRequest webRequest) 
+		throws Exception {
 			Object arg;
 	
 			HttpServletRequest servletRequest = webRequest.getNativeRequest(HttpServletRequest.class);
@@ -179,17 +180,20 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 	
 			if (MultipartFile.class.equals(parameter.getParameterType())) {
 				assertIsMultipartRequest(servletRequest);
-				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: is a MultipartResolver configured?");
+				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: 
+					is a MultipartResolver configured?");
 				arg = multipartRequest.getFile(name);
 			}
 			else if (isMultipartFileCollection(parameter)) {
 				assertIsMultipartRequest(servletRequest);
-				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: is a MultipartResolver configured?");
+				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: 
+					is a MultipartResolver configured?");
 				arg = multipartRequest.getFiles(name);
 			}
 			else if(isMultipartFileArray(parameter)) {
 				assertIsMultipartRequest(servletRequest);
-				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: is a MultipartResolver configured?");
+				Assert.notNull(multipartRequest, "Expected MultipartHttpServletRequest: 
+					is a MultipartResolver configured?");
 				arg = multipartRequest.getFiles(name).toArray(new MultipartFile[0]);
 			}
 			else if ("javax.servlet.http.Part".equals(parameter.getParameterType().getName())) {
@@ -229,7 +233,8 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 ###清理占用的资源，如临时文件
 
 	protected void cleanupMultipart(HttpServletRequest servletRequest) {
-		MultipartHttpServletRequest req = WebUtils.getNativeRequest(servletRequest, MultipartHttpServletRequest.class);
+		MultipartHttpServletRequest req = WebUtils.getNativeRequest(
+			servletRequest, MultipartHttpServletRequest.class);
 		if (req != null) {
 			this.multipartResolver.cleanupMultipart(req);
 		}
