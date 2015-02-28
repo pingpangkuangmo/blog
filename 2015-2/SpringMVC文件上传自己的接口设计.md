@@ -9,7 +9,7 @@
 
 存放Spring定义的文件上传接口以及异常，如
 
--	MultipartException、MaxUploadSizeExceededException 对用户抛出的解析异常（隐藏底层解析包所抛出的异常）
+-	MultipartException对用户抛出的解析异常（隐藏底层解析包所抛出的异常），也就指明了，这个体系下只能抛出这种类型的异常，MaxUploadSizeExceededException是MultipartException它的子类，专门用于指定文件大小限制的异常。在这种情况下，底层采用的jar包在解析文件上传时也会定义自己的解析异常，这时候就需要在整合这些jar包时
 -	MultipartFile 定义了文件解析的统一结果类型
 -	MultipartResolver 定义了文件解析的处理器，用于决定采用哪种解析方式
 
@@ -32,7 +32,7 @@
 
 #SpringMVC自己的接口设计
 
-首先看下MultipartResolver接口的内容：
+##MultipartResolver接口的内容：
 
 	public interface MultipartResolver {
 		//判断当前的HttpServletRequest是否是文件上传类型
@@ -42,6 +42,23 @@
 		//清除产生的临时文件等
 		void cleanupMultipart(MultipartHttpServletRequest request);
 	}
+##MultipartHttpServletRequest接口内容：
+
+MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，然后就具有了下面的两个主要功能
+
+-	获取文件上传的每一部分的请求头信息
+	
+		HttpHeaders getRequestHeaders();
+		HttpHeaders getMultipartHeaders(String paramOrFileName);
+
+-	获取文件上传的文件信息（每个文件信息都是MultipartFile类型）
+
+		Iterator<String> getFileNames();
+		MultipartFile getFile(String name);
+		List<MultipartFile> getFiles(String name);
+		Map<String, MultipartFile> getFileMap();
+
+##整个处理流程
 
 
 
