@@ -9,7 +9,12 @@
 
 存放Spring定义的文件上传接口以及异常，如
 
--	MultipartException对用户抛出的解析异常（隐藏底层解析包所抛出的异常），也就指明了，这个体系下只能抛出这种类型的异常，MaxUploadSizeExceededException是MultipartException它的子类，专门用于指定文件大小限制的异常。在这种情况下，底层采用的jar包在解析文件上传时也会定义自己的解析异常，这时候就需要在整合这些jar包时
+-	MultipartException对用户抛出的解析异常（隐藏底层文件上传解析包所抛出的异常）
+
+	也就指明了，这个体系下只能抛出这种类型的异常，MaxUploadSizeExceededException是MultipartException它的子类，专门用于指定文件大小限制的异常。
+
+	用户不应该看到底层文件上传解析包所抛出的异常，底层采用的文件上传解析包在解析文件上传时也会定义自己的解析异常，这时候就需要在整合这些jar包时,需要对解析包所抛出的异常进行转换成上述已统一定义的面向用户的异常
+
 -	MultipartFile 定义了文件解析的统一结果类型
 -	MultipartResolver 定义了文件解析的处理器，用于决定采用哪种解析方式
 
