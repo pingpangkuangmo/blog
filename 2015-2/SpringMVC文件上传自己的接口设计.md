@@ -302,7 +302,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 -	FileItem为apache fileupload自己的解析结果，需要转化为SpringMVC自己定义的MultipartFile
 
 	protected MultipartParsingResult parseFileItems(List<FileItem> fileItems, String encoding) {
-		MultiValueMap<String, MultipartFile> multipartFiles = new LinkedMultiValueMap<String, MultipartFile>();
+		MultiValueMap<String, MultipartFile> multipartFiles = new LinkedMultiValueMap<String,MultipartFile>();
 		Map<String, String[]> multipartParameters = new HashMap<String, String[]>();
 		Map<String, String> multipartParameterContentTypes = new HashMap<String, String>();
 
@@ -316,10 +316,6 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 						value = fileItem.getString(partEncoding);
 					}
 					catch (UnsupportedEncodingException ex) {
-						if (logger.isWarnEnabled()) {
-							logger.warn("Could not decode multipart item '" + fileItem.getFieldName() +
-									"' with encoding '" + partEncoding + "': using platform default");
-						}
 						value = fileItem.getString();
 					}
 				}
@@ -342,14 +338,10 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 				// multipart file field
 				CommonsMultipartFile file = new CommonsMultipartFile(fileItem);
 				multipartFiles.add(file.getName(), file);
-				if (logger.isDebugEnabled()) {
-					logger.debug("Found multipart file [" + file.getName() + "] of size " + file.getSize() +
-							" bytes with original filename [" + file.getOriginalFilename() + "], stored " +
-							file.getStorageDescription());
-				}
 			}
 		}
-		return new MultipartParsingResult(multipartFiles, multipartParameters, multipartParameterContentTypes);
+		return new MultipartParsingResult(multipartFiles, multipartParameters, 
+					multipartParameterContentTypes);
 	}
 
 这里有普通字段的处理和文件字段的处理。还记得上文讲的org.springframework.web.multipart.commons包的CommonsMultipartFile吗？可以看到通过new CommonsMultipartFile(fileItem)，就将FileItem结果转化为了MultipartFile结果。
@@ -366,10 +358,6 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 				if (file instanceof CommonsMultipartFile) {
 					CommonsMultipartFile cmf = (CommonsMultipartFile) file;
 					cmf.getFileItem().delete();
-					if (logger.isDebugEnabled()) {
-						logger.debug("Cleaning up multipart file [" + cmf.getName() + "] with original filename [" +
-								cmf.getOriginalFilename() + "], stored " + cmf.getStorageDescription());
-					}
 				}
 			}
 		}
@@ -379,6 +367,93 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 #整合Spring自己对文件上传的解析
 
+这个不再详细说明，主要引出来 javax.servlet.http.Part 这个对象是j2ee内置的文件上传解析结果，类似apache fileupload的FileItem解析结果，从Servlet3.0才加入进来的。
 
+和apache fileupload一样的步骤，来看下具体源码内容：
+
+##判断一个request是否是multipart形式的
+	
+	@Override
+	public boolean isMultipart(HttpServletRequest request) {
+		// Same check as in Commons FileUpload...
+		if (!"post".equals(request.getMethod().toLowerCase())) {
+			return false;
+		}
+		String contentType = request.getContentType();
+		return (contentType != null && contentType.toLowerCase().startsWith("multipart/"));
+	}
+
+同样是这两个条件，post和"multipart/"开头。
+
+##将HttpServletRequest解析成StandardMultipartHttpServletRequest
+
+	@Override
+	public MultipartHttpServletRequest resolveMultipart(HttpServletRequest request) throws MultipartException {
+		return new StandardMultipartHttpServletRequest(request, this.resolveLazily);
+	}
+
+在创建StandardMultipartHttpServletRequest的时候进行解析，解析过程和apache fileupload非常类似，只不过用Part替代了apache fileupload的FileItem，如下
+
+	private void parseRequest(HttpServletRequest request) {
+		try {
+			Collection<Part> parts = request.getParts();
+			this.multipartParameterNames = new LinkedHashSet<String>(parts.size());
+			MultiValueMap<String, MultipartFile> files = new LinkedMultiValueMap<String, MultipartFile>(parts.size());
+			for (Part part : parts) {
+				String filename = extractFilename(part.getHeader(CONTENT_DISPOSITION));
+				if (filename != null) {
+					files.add(part.getName(), new StandardMultipartFile(part, filename));
+				}
+				else {
+					this.multipartParameterNames.add(part.getName());
+				}
+			}
+			setMultipartFiles(files);
+		}
+		catch (Exception ex) {
+			throw new MultipartException("Could not parse multipart servlet request", ex);
+		}
+	}
+
+遍历所有的Part,把每一个Part转化成StandardMultipartFile，而apache fileupload则是转化成CommonsMultipartFile。不再详细说明，具体的可以去看源码。
+
+这里还有很多小插曲。
+
+-	我之前导入的一直是
+
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>servlet-api</artifactId>
+			<version>2.5</version>
+			<scope>provided</scope>
+		</dependency>
+	
+	之后把它换成3点多的版本，还是没找到javax.servlet.http.Part，最后才发现导入的是下面的形式
+	
+		<dependency>
+			<groupId>javax.servlet</groupId>
+			<artifactId>javax.servlet-api</artifactId>
+			<version>3.0.1</version>
+			<scope>provided</scope>
+		</dependency>
+
+	这里的scope是provided，即不再加入运行环境，直接使用tomcat容器自身的servlet-api。目前我的tomcat7中servlet-api.jar包是含有这个javax.servlet.http.Part对象的，所以是可以的
+
+-	然后我就替换掉apache fileupload，使用Servlet3自带的Part功能，来使用文件上传，发现不行，没有得到解析结果，就想尝试调试下，然而运行到Collection<Part> parts = request.getParts()这里的时候，就不能查看源文件了，这里的request是org.apache.catalina.connector.RequestFacade类型，没有关联到源文件，经过一番寻找，最终找到tomcat的maven依赖
+	
+		<dependency>
+			<groupId>org.apache.tomcat</groupId>
+			<artifactId>tomcat-catalina</artifactId>
+			<version>7.0.55</version>
+			<scope>provided</scope>
+		</dependency>
+
+	有了它，我们就可以在调试的时候，查看tomcat内部的运行情况了
+
+-	然后一路跟踪，定位到结果为 需要将org.apache.catalina.core.StandardContext的allowCasualMultipartParsing属性设置为true，即允许进行文件解析,默认为false。需要在server.xml中修改工程配置,然后就大功告成了。
+	
+	<Context ... allowCasualMultipartParsing="true"/>
+
+	
   [1]: http://static.oschina.net/uploads/space/2015/0228/181740_Newd_2287728.png
   [2]: http://static.oschina.net/uploads/space/2015/0216/111637_pAjl_2287728.png
