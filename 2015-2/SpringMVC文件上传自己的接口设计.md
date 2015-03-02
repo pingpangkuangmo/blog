@@ -1,3 +1,9 @@
+#前两篇文章的铺垫
+
+#[SpringMVC文件上传源码分析前言](http://my.oschina.net/pingpangkuangmo/blog/378836)
+
+#[apache fileupload源码分析](http://my.oschina.net/pingpangkuangmo/blog/379282)
+
 #整体的包结构
 首先看下整体的包的结构，如下图
 
@@ -28,7 +34,7 @@
 
 ##org.springframework.web.multipart.support
 
-用于整合Spring自己的文件上传解析，对上述定义的接口进行实现，如
+用于整合j2ee自带的文件上传的解析，对上述定义的接口进行实现，如
 
 -	StandardMultipartFile实现上述MultipartFile接口，即采用这种方式解析的结果为StandardMultipartFile
 -	StandardServletMultipartResolver实现上述MultipartResolver，待会详细说明
@@ -365,7 +371,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 至此，SpringMVC与apache fileupload的整合完成了，其他的整合也是类似的操作。
 
-#整合Spring自己对文件上传的解析
+#整合j2ee自带的文件上传的解析
 
 这个不再详细说明，主要引出来 javax.servlet.http.Part 这个对象是j2ee内置的文件上传解析结果，类似apache fileupload的FileItem解析结果，从Servlet3.0才加入进来的。
 
@@ -417,6 +423,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 遍历所有的Part,把每一个Part转化成StandardMultipartFile，而apache fileupload则是转化成CommonsMultipartFile。不再详细说明，具体的可以去看源码。
 
+##遇到的一些问题
 这里还有很多小插曲。
 
 -	我之前导入的一直是
@@ -452,7 +459,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 -	然后一路跟踪，定位到结果为 需要将org.apache.catalina.core.StandardContext的allowCasualMultipartParsing属性设置为true，即允许进行文件解析,默认为false。需要在server.xml中修改工程配置,然后就大功告成了。
 	
-	<Context ... allowCasualMultipartParsing="true"/>
+		<Context ... allowCasualMultipartParsing="true"/>
 
 	
   [1]: http://static.oschina.net/uploads/space/2015/0228/181740_Newd_2287728.png
