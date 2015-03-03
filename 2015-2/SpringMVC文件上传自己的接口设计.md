@@ -1,17 +1,17 @@
-#前两篇文章的铺垫
+#1 前两篇文章的铺垫
 
-#[SpringMVC文件上传源码分析前言](http://my.oschina.net/pingpangkuangmo/blog/378836)
+#1.1 [SpringMVC文件上传源码分析前言](http://my.oschina.net/pingpangkuangmo/blog/378836)
 
-#[apache fileupload源码分析](http://my.oschina.net/pingpangkuangmo/blog/379282)
+#1.2 [apache fileupload源码分析](http://my.oschina.net/pingpangkuangmo/blog/379282)
 
-#整体的包结构
+#2 整体的包结构
 首先看下整体的包的结构，如下图
 
 ![在此输入图片描述][1]
 
 总共分成3大块，分别如下
 
-##org.springframework.web.multipart
+##2.1 org.springframework.web.multipart
 
 存放Spring定义的文件上传接口以及异常，如
 
@@ -25,14 +25,14 @@
 -	MultipartResolver 定义了文件解析的处理器，不同的处理器不同的解析方式
 
 
-##org.springframework.web.multipart.commons
+##2.2 org.springframework.web.multipart.commons
 
 用于整合apache fileupload的解析，对上述定义的接口进行实现，如
 
 -	CommonsMultipartFile实现上述MultipartFile接口，即采用apache fileupload解析的结果为CommonsMultipartFile
 -	CommonsMultipartResolver实现上述MultipartResolver，待会详细说明
 
-##org.springframework.web.multipart.support
+##2.3 org.springframework.web.multipart.support
 
 用于整合j2ee自带的文件上传的解析，对上述定义的接口进行实现，如
 
@@ -41,9 +41,9 @@
 
 接下来详细看看这些源码内容
 
-#SpringMVC自己的接口设计
+#3 SpringMVC自己的接口设计
 
-##MultipartResolver接口的内容：
+##3.1 MultipartResolver接口的内容：
 
 	public interface MultipartResolver {
 		//判断当前的HttpServletRequest是否是文件上传类型
@@ -53,7 +53,7 @@
 		//清除产生的临时文件等
 		void cleanupMultipart(MultipartHttpServletRequest request);
 	}
-##MultipartHttpServletRequest接口内容：
+##3.2 MultipartHttpServletRequest接口内容：
 
 MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，然后就具有了下面的两个主要功能
 
@@ -74,7 +74,7 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 		List<MultipartFile> getFiles(String name);
 		Map<String, MultipartFile> getFileMap();
 
-##整个处理流程
+##3.3 整个处理流程
 
 在SpringMVC的入口类DispatcherServlet中的doDispatch方法中，可以看到是如下的处理流程
 
@@ -108,7 +108,7 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 
 下面分别来说
 
-###判断并解析HttpServletRequest成MultipartHttpServletRequest：
+###3.3.1 判断并解析HttpServletRequest成MultipartHttpServletRequest：
 
 	protected HttpServletRequest checkMultipart(HttpServletRequest request) throws MultipartException {
 		if (this.multipartResolver != null && this.multipartResolver.isMultipart(request)) {
@@ -241,7 +241,7 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 	我们这里可以看到，其实也是通过MultipartHttpServletRequest的getFile等方法来获取的，同时支持数组、集合形式的参数
 
 
-###清理占用的资源，如临时文件
+###3.3.2 清理占用的资源，如临时文件
 
 	protected void cleanupMultipart(HttpServletRequest servletRequest) {
 		MultipartHttpServletRequest req = WebUtils.getNativeRequest(
@@ -255,10 +255,10 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 
 至此SpringMVC已经完成了自己的文件上传框架体系，即底层不管采用何种文件解析包都是走这样的一个流程。这样的一个流程其实就是对实际业务的抽象过程。我们在写代码的时候，经常就缺少抽象的能力，即很少抽象出各种业务逻辑的共同点。
 
-#整合apache fileupload对文件上传的解析
+#4 整合apache fileupload对文件上传的解析
 刚才说了整个文件上传的处理流程，然后我们就来看下apache fileupload是如何整合进来的。即CommonsMultipartResolver是如何实现的
 
-##判断一个request是否是multipart形式的
+##4.1 判断一个request是否是multipart形式的
 	
 		@Override
 		public boolean isMultipart(HttpServletRequest request) {
@@ -275,7 +275,7 @@ MultipartHttpServletRequest 继承了 HttpServletRequest 和 MultipartRequest，
 
 SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判断逻辑，而不是自行判断，虽然他们目前的判断逻辑是一样的。万一后来又出来一个解析包，判断逻辑不一样呢？如果流程体系还是采用SpringMVC自己的判断，可能就没法正常解析了
 
-##将HttpServletRequest解析成DefaultMultipartHttpServletRequest
+##4.2 将HttpServletRequest解析成DefaultMultipartHttpServletRequest
 
 一旦上述判断通过了，则就需要执行解析过程（可以立即解析，也可以延迟解析），看下具体的解析过程
 
@@ -301,60 +301,61 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 这里大致说下过程，详细的内容去看源代码。
 
--	使用apache fileupload的ServletFileUpload对request进行解析，解析结果为List<FileItem>，代码如下：
+-	使用apache fileupload的ServletFileUpload对request进行解析，解析结果为List<FileItem\>，代码如下：
 	
-	List<FileItem> fileItems = ((ServletFileUpload) fileUpload).parseRequest(request);
+	List<FileItem\> fileItems = ((ServletFileUpload) fileUpload).parseRequest(request);
 
 -	FileItem为apache fileupload自己的解析结果，需要转化为SpringMVC自己定义的MultipartFile
 
-	protected MultipartParsingResult parseFileItems(List<FileItem> fileItems, String encoding) {
-		MultiValueMap<String, MultipartFile> multipartFiles = new LinkedMultiValueMap<String,MultipartFile>();
-		Map<String, String[]> multipartParameters = new HashMap<String, String[]>();
-		Map<String, String> multipartParameterContentTypes = new HashMap<String, String>();
 
-		// Extract multipart files and multipart parameters.
-		for (FileItem fileItem : fileItems) {
-			if (fileItem.isFormField()) {
-				String value;
-				String partEncoding = determineEncoding(fileItem.getContentType(), encoding);
-				if (partEncoding != null) {
-					try {
-						value = fileItem.getString(partEncoding);
+		protected MultipartParsingResult parseFileItems(List<FileItem\> fileItems, String encoding) {
+			MultiValueMap<String, MultipartFile> multipartFiles = new LinkedMultiValueMap<String,MultipartFile>();
+			Map<String, String[]> multipartParameters = new HashMap<String, String[]>();
+			Map<String, String> multipartParameterContentTypes = new HashMap<String, String>();
+	
+			// Extract multipart files and multipart parameters.
+			for (FileItem fileItem : fileItems) {
+				if (fileItem.isFormField()) {
+					String value;
+					String partEncoding = determineEncoding(fileItem.getContentType(), encoding);
+					if (partEncoding != null) {
+						try {
+							value = fileItem.getString(partEncoding);
+						}
+						catch (UnsupportedEncodingException ex) {
+							value = fileItem.getString();
+						}
 					}
-					catch (UnsupportedEncodingException ex) {
+					else {
 						value = fileItem.getString();
 					}
+					String[] curParam = multipartParameters.get(fileItem.getFieldName());
+					if (curParam == null) {
+						// simple form field
+						multipartParameters.put(fileItem.getFieldName(), new String[] {value});
+					}
+					else {
+						// array of simple form fields
+						String[] newParam = StringUtils.addStringToArray(curParam, value);
+						multipartParameters.put(fileItem.getFieldName(), newParam);
+					}
+					multipartParameterContentTypes.put(fileItem.getFieldName(), fileItem.getContentType());
 				}
 				else {
-					value = fileItem.getString();
+					// multipart file field
+					CommonsMultipartFile file = new CommonsMultipartFile(fileItem);
+					multipartFiles.add(file.getName(), file);
 				}
-				String[] curParam = multipartParameters.get(fileItem.getFieldName());
-				if (curParam == null) {
-					// simple form field
-					multipartParameters.put(fileItem.getFieldName(), new String[] {value});
-				}
-				else {
-					// array of simple form fields
-					String[] newParam = StringUtils.addStringToArray(curParam, value);
-					multipartParameters.put(fileItem.getFieldName(), newParam);
-				}
-				multipartParameterContentTypes.put(fileItem.getFieldName(), fileItem.getContentType());
 			}
-			else {
-				// multipart file field
-				CommonsMultipartFile file = new CommonsMultipartFile(fileItem);
-				multipartFiles.add(file.getName(), file);
-			}
+			return new MultipartParsingResult(multipartFiles, multipartParameters, 
+						multipartParameterContentTypes);
 		}
-		return new MultipartParsingResult(multipartFiles, multipartParameters, 
-					multipartParameterContentTypes);
-	}
 
 这里有普通字段的处理和文件字段的处理。还记得上文讲的org.springframework.web.multipart.commons包的CommonsMultipartFile吗？可以看到通过new CommonsMultipartFile(fileItem)，就将FileItem结果转化为了MultipartFile结果。
 
 至此就将HttpServletRequest解析成了DefaultMultipartHttpServletRequest，所以我们在使用request时，它的类型其实就是DefaultMultipartHttpServletRequest类型，我们可以通过它来获取各种上传的文件信息。
 
-##清理临时文件
+##4.3 清理临时文件
 
 其实就是对所有的CommonsMultipartFile中的FileItem进行删除临时文件的操作，这个删除操作是apache fileupload自己定义的，如下
 	
@@ -371,13 +372,13 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 至此，SpringMVC与apache fileupload的整合完成了，其他的整合也是类似的操作。
 
-#整合j2ee自带的文件上传的解析
+#5 整合j2ee自带的文件上传的解析
 
 这个不再详细说明，主要引出来 javax.servlet.http.Part 这个对象是j2ee内置的文件上传解析结果，类似apache fileupload的FileItem解析结果，从Servlet3.0才加入进来的。
 
 和apache fileupload一样的步骤，来看下具体源码内容：
 
-##判断一个request是否是multipart形式的
+##5.1 判断一个request是否是multipart形式的
 	
 	@Override
 	public boolean isMultipart(HttpServletRequest request) {
@@ -391,7 +392,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 同样是这两个条件，post和"multipart/"开头。
 
-##将HttpServletRequest解析成StandardMultipartHttpServletRequest
+##5.2 将HttpServletRequest解析成StandardMultipartHttpServletRequest
 
 	@Override
 	public MultipartHttpServletRequest resolveMultipart(HttpServletRequest request) throws MultipartException {
@@ -423,7 +424,7 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 遍历所有的Part,把每一个Part转化成StandardMultipartFile，而apache fileupload则是转化成CommonsMultipartFile。不再详细说明，具体的可以去看源码。
 
-##遇到的一些问题
+##5.3 遇到的一些问题
 这里还有很多小插曲。
 
 -	我之前导入的一直是
