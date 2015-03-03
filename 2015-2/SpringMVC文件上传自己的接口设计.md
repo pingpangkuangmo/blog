@@ -320,14 +320,14 @@ SpringMVC既然采用第三方的解析包，就要遵守人家解析包的判�
 
 这里大致说下过程，详细的内容去看源代码。
 
--	使用apache fileupload的ServletFileUpload对request进行解析，解析结果为List&lt;FileItem&gt;，代码如下：
+-	使用apache fileupload的ServletFileUpload对request进行解析，解析结果为List<FileItem\>，代码如下：
 	
-	List&lt;FileItem&gt; fileItems = ((ServletFileUpload) fileUpload).parseRequest(request);
+		List<FileItem> fileItems = ((ServletFileUpload) fileUpload).parseRequest(request);
 
 -	FileItem为apache fileupload自己的解析结果，需要转化为SpringMVC自己定义的MultipartFile
 
 
-		protected MultipartParsingResult parseFileItems(List&lt;FileItem&lt; fileItems, String encoding) {
+		protected MultipartParsingResult parseFileItems(List<FileItem> fileItems, String encoding) {
 			MultiValueMap<String, MultipartFile> multipartFiles = new LinkedMultiValueMap<String,MultipartFile>();
 			Map<String, String[]> multipartParameters = new HashMap<String, String[]>();
 			Map<String, String> multipartParameterContentTypes = new HashMap<String, String>();
