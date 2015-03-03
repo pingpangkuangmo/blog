@@ -21,6 +21,25 @@
 
 	用户不应该看到底层文件上传解析包所抛出的异常，底层采用的文件上传解析包在解析文件上传时也会定义自己的解析异常，这时候就需要在整合这些jar包时,需要对解析包所抛出的异常进行转换成上述已统一定义的面向用户的异常
 
+	源码见证下：
+
+		protected MultipartParsingResult parseRequest(HttpServletRequest request) throws MultipartException {
+			String encoding = determineEncoding(request);
+			FileUpload fileUpload = prepareFileUpload(encoding);
+			try {
+				List<FileItem> fileItems = ((ServletFileUpload) fileUpload).parseRequest(request);
+				return parseFileItems(fileItems, encoding);
+			}
+			catch (FileUploadBase.SizeLimitExceededException ex) {
+				throw new MaxUploadSizeExceededException(fileUpload.getSizeMax(), ex);
+			}
+			catch (FileUploadException ex) {
+				throw new MultipartException("Could not parse multipart servlet request", ex);
+			}
+		}
+
+	FileUploadBase.SizeLimitExceededException、FileUploadException 都是底层解析包apache fileupload解析时抛出的异常，在这里要进行try catch 处理，然后将这些异常转化成SpringMVC自定义的异常MaxUploadSizeExceededException、MultipartException
+
 -	MultipartFile 定义了文件解析的统一结果类型
 -	MultipartResolver 定义了文件解析的处理器，不同的处理器不同的解析方式
 
