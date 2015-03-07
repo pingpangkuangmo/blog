@@ -124,13 +124,369 @@ tomcat默认注册了，映射 '/' 路径的的DefaultServlet，映射*.jsp和*.
 		</servlet-mapping>
 
 
--	Context 表示一个应用，包含了web.xml中配置的所有信息
+-	Context 表示一个应用，包含了web.xml中配置的所有信息，所以当一个请求到来时，它负责找到对应的Servlet，然后调用这个Servlet的service方法，执行我们所写的业务逻辑。
+
+Context把上述的根据映射寻找Servlet的过程封装起来交给了一个org.apache.tomcat.util.http.mapper.Mapper类来完成，所以请求匹配规则都在这个Mapper中来完成。
+
+所以这个Mapper做了2件事情
+
+-	在初始化web.xml的时候，Mapper需要收集其中的servlet及其映射信息并进行一定的处理，存储到Mapper的内部类ContextVersion中
+
+-	在请求到来的时候，它能根据请求地址，选择出对应的servlet等信息，供使用
+
+Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储，如下：
+
+	protected static final class ContextVersion extends MapElement {
+        public String[] welcomeResources = new String[0];
+        public Wrapper defaultWrapper = null;
+        public Wrapper[] exactWrappers = new Wrapper[0];
+        public Wrapper[] wildcardWrappers = new Wrapper[0];
+        public Wrapper[] extensionWrappers = new Wrapper[0];
+       	//略
+	}
+总共分成了5种，分别是
+
+-	welcomeResources 欢迎页面，就是web.xml中可以配置的如下内容，待会以案例的形式详细说明它的作用
+
+		<welcome-file-list>
+			<welcome-file>index.html</welcome-file>
+			<welcome-file>index.htm</welcome-file>
+		</welcome-file-list>
+
+-	defaultWrapper 用于存放默认的servlet信息
+
+-	exactWrappers 用于精确匹配，即要求必须一模一样
+
+-	wildcardWrappers 用于通配符匹配 如 /*、/abc/\*
+
+-	extensionWrappers 用于扩展名匹配，即 *.jsp、*.html等	
+
+下面就来看看Mapper是如何进行归类处理的
+
+###Mapper的归类处理Servlet和映射信息
+
+	protected void addWrapper(ContextVersion context, String path,
+            Object wrapper, boolean jspWildCard, boolean resourceOnly) {
+
+        synchronized (context) {
+            if (path.endsWith("/*")) {
+                // Wildcard wrapper
+                String name = path.substring(0, path.length() - 2);
+                Wrapper newWrapper = new Wrapper(name, wrapper, jspWildCard,
+                        resourceOnly);
+                Wrapper[] oldWrappers = context.wildcardWrappers;
+                Wrapper[] newWrappers =
+                    new Wrapper[oldWrappers.length + 1];
+                if (insertMap(oldWrappers, newWrappers, newWrapper)) {
+                    context.wildcardWrappers = newWrappers;
+                    int slashCount = slashCount(newWrapper.name);
+                    if (slashCount > context.nesting) {
+                        context.nesting = slashCount;
+                    }
+                }
+            } else if (path.startsWith("*.")) {
+                // Extension wrapper
+                String name = path.substring(2);
+                Wrapper newWrapper = new Wrapper(name, wrapper, jspWildCard,
+                        resourceOnly);
+                Wrapper[] oldWrappers = context.extensionWrappers;
+                Wrapper[] newWrappers =
+                    new Wrapper[oldWrappers.length + 1];
+                if (insertMap(oldWrappers, newWrappers, newWrapper)) {
+                    context.extensionWrappers = newWrappers;
+                }
+            } else if (path.equals("/")) {
+                // Default wrapper
+                Wrapper newWrapper = new Wrapper("", wrapper, jspWildCard,
+                        resourceOnly);
+                context.defaultWrapper = newWrapper;
+            } else {
+                // Exact wrapper
+                final String name;
+                if (path.length() == 0) {
+                    // Special case for the Context Root mapping which is
+                    // treated as an exact match
+                    name = "/";
+                } else {
+                    name = path;
+                }
+                Wrapper newWrapper = new Wrapper(name, wrapper, jspWildCard,
+                        resourceOnly);
+                Wrapper[] oldWrappers = context.exactWrappers;
+                Wrapper[] newWrappers =
+                    new Wrapper[oldWrappers.length + 1];
+                if (insertMap(oldWrappers, newWrappers, newWrapper)) {
+                    context.exactWrappers = newWrappers;
+                }
+            }
+        }
+    }
+
+上面几个if else语句就解释的很清楚
+
+-	以 /* 结尾的，都纳入通配符匹配，存到ContextVersion的wildcardWrappers中
+
+-	以 *.开始的，都纳入扩展名匹配中，存到ContextVersion的extensionWrappers中
+
+-	/  ，作为默认的，存到ContextVersion的defaultWrapper中
+
+-	其他的都作为精准匹配，存到ContextVersion的exactWrappers中
+
+此时我们可能会想，url形式多样，也不会仅仅只有这几种吧。如/a/\*.jsp，即不是以 /* 结尾，也不是以 \*. 开始，貌似只能分配到精准匹配中去了。实际上tomcat就把url形式限制死了，它会进行相应的检查，如下
+
+	private boolean validateURLPattern(String urlPattern) {
+
+        if (urlPattern == null)
+            return (false);
+        if (urlPattern.indexOf('\n') >= 0 || urlPattern.indexOf('\r') >= 0) {
+            return (false);
+        }
+        if (urlPattern.equals("")) {
+            return true;
+        }
+        if (urlPattern.startsWith("*.")) {
+            if (urlPattern.indexOf('/') < 0) {
+                checkUnusualURLPattern(urlPattern);
+                return (true);
+            } else
+                return (false);
+        }
+        if ( (urlPattern.startsWith("/")) &&
+                (urlPattern.indexOf("*.") < 0)) {
+            checkUnusualURLPattern(urlPattern);
+            return (true);
+        } else
+            return (false);
+
+    }
+
+显然，urlPattern可以为"",其他必须以 *. 或者 / 开头，并且两者不能同时存在。/a/\*.jsp不符合最后一个条件，直接报错，tomcat启动失败，所以我们不用过多的担心servlet标签中的url-pattern的复杂性。
+
+初始化归类完成之后，当请求到来时，就需要利用已归类好的数据进行匹配了，找到合适的Servlet来响应
+
+###Mapper匹配请求对应的Servlet
+
+在Mapper的internalMapWrapper方法中，存在着匹配规则，如下
+
+	private final void internalMapWrapper(ContextVersion contextVersion,
+                                          CharChunk path,
+                                          MappingData mappingData)
+        throws Exception {
+
+        int pathOffset = path.getOffset();
+        int pathEnd = path.getEnd();
+        int servletPath = pathOffset;
+        boolean noServletPath = false;
+
+        int length = contextVersion.path.length();
+        if (length != (pathEnd - pathOffset)) {
+            servletPath = pathOffset + length;
+        } else {
+            noServletPath = true;
+            path.append('/');
+            pathOffset = path.getOffset();
+            pathEnd = path.getEnd();
+            servletPath = pathOffset+length;
+        }
+
+        path.setOffset(servletPath);
+
+        // Rule 1 -- Exact Match
+        Wrapper[] exactWrappers = contextVersion.exactWrappers;
+        internalMapExactWrapper(exactWrappers, path, mappingData);
+
+        // Rule 2 -- Prefix Match
+        boolean checkJspWelcomeFiles = false;
+        Wrapper[] wildcardWrappers = contextVersion.wildcardWrappers;
+        if (mappingData.wrapper == null) {
+            internalMapWildcardWrapper(wildcardWrappers, contextVersion.nesting,
+                                       path, mappingData);
+            if (mappingData.wrapper != null && mappingData.jspWildCard) {
+                char[] buf = path.getBuffer();
+                if (buf[pathEnd - 1] == '/') {
+                    /*
+                     * Path ending in '/' was mapped to JSP servlet based on
+                     * wildcard match (e.g., as specified in url-pattern of a
+                     * jsp-property-group.
+                     * Force the context's welcome files, which are interpreted
+                     * as JSP files (since they match the url-pattern), to be
+                     * considered. See Bugzilla 27664.
+                     */
+                    mappingData.wrapper = null;
+                    checkJspWelcomeFiles = true;
+                } else {
+                    // See Bugzilla 27704
+                    mappingData.wrapperPath.setChars(buf, path.getStart(),
+                                                     path.getLength());
+                    mappingData.pathInfo.recycle();
+                }
+            }
+        }
+
+        if(mappingData.wrapper == null && noServletPath) {
+            // The path is empty, redirect to "/"
+            mappingData.redirectPath.setChars
+                (path.getBuffer(), pathOffset, pathEnd-pathOffset);
+            path.setEnd(pathEnd - 1);
+            return;
+        }
+
+        // Rule 3 -- Extension Match
+        Wrapper[] extensionWrappers = contextVersion.extensionWrappers;
+        if (mappingData.wrapper == null && !checkJspWelcomeFiles) {
+            internalMapExtensionWrapper(extensionWrappers, path, mappingData,
+                    true);
+        }
+
+        // Rule 4 -- Welcome resources processing for servlets
+        if (mappingData.wrapper == null) {
+            boolean checkWelcomeFiles = checkJspWelcomeFiles;
+            if (!checkWelcomeFiles) {
+                char[] buf = path.getBuffer();
+                checkWelcomeFiles = (buf[pathEnd - 1] == '/');
+            }
+            if (checkWelcomeFiles) {
+                for (int i = 0; (i < contextVersion.welcomeResources.length)
+                         && (mappingData.wrapper == null); i++) {
+                    path.setOffset(pathOffset);
+                    path.setEnd(pathEnd);
+                    path.append(contextVersion.welcomeResources[i], 0,
+                            contextVersion.welcomeResources[i].length());
+                    path.setOffset(servletPath);
+
+                    // Rule 4a -- Welcome resources processing for exact macth
+                    internalMapExactWrapper(exactWrappers, path, mappingData);
+
+                    // Rule 4b -- Welcome resources processing for prefix match
+                    if (mappingData.wrapper == null) {
+                        internalMapWildcardWrapper
+                            (wildcardWrappers, contextVersion.nesting,
+                             path, mappingData);
+                    }
+
+                    // Rule 4c -- Welcome resources processing
+                    //            for physical folder
+                    if (mappingData.wrapper == null
+                        && contextVersion.resources != null) {
+                        Object file = null;
+                        String pathStr = path.toString();
+                        try {
+                            file = contextVersion.resources.lookup(pathStr);
+                        } catch(NamingException nex) {
+                            // Swallow not found, since this is normal
+                        }
+                        if (file != null && !(file instanceof DirContext) ) {
+                            internalMapExtensionWrapper(extensionWrappers, path,
+                                                        mappingData, true);
+                            if (mappingData.wrapper == null
+                                && contextVersion.defaultWrapper != null) {
+                                mappingData.wrapper =
+                                    contextVersion.defaultWrapper.object;
+                                mappingData.requestPath.setChars
+                                    (path.getBuffer(), path.getStart(),
+                                     path.getLength());
+                                mappingData.wrapperPath.setChars
+                                    (path.getBuffer(), path.getStart(),
+                                     path.getLength());
+                                mappingData.requestPath.setString(pathStr);
+                                mappingData.wrapperPath.setString(pathStr);
+                            }
+                        }
+                    }
+                }
+
+                path.setOffset(servletPath);
+                path.setEnd(pathEnd);
+            }
+
+        }
+
+        /* welcome file processing - take 2
+         * Now that we have looked for welcome files with a physical
+         * backing, now look for an extension mapping listed
+         * but may not have a physical backing to it. This is for
+         * the case of index.jsf, index.do, etc.
+         * A watered down version of rule 4
+         */
+        if (mappingData.wrapper == null) {
+            boolean checkWelcomeFiles = checkJspWelcomeFiles;
+            if (!checkWelcomeFiles) {
+                char[] buf = path.getBuffer();
+                checkWelcomeFiles = (buf[pathEnd - 1] == '/');
+            }
+            if (checkWelcomeFiles) {
+                for (int i = 0; (i < contextVersion.welcomeResources.length)
+                         && (mappingData.wrapper == null); i++) {
+                    path.setOffset(pathOffset);
+                    path.setEnd(pathEnd);
+                    path.append(contextVersion.welcomeResources[i], 0,
+                                contextVersion.welcomeResources[i].length());
+                    path.setOffset(servletPath);
+                    internalMapExtensionWrapper(extensionWrappers, path,
+                                                mappingData, false);
+                }
+
+                path.setOffset(servletPath);
+                path.setEnd(pathEnd);
+            }
+        }
 
 
+        // Rule 7 -- Default servlet
+        if (mappingData.wrapper == null && !checkJspWelcomeFiles) {
+            if (contextVersion.defaultWrapper != null) {
+                mappingData.wrapper = contextVersion.defaultWrapper.object;
+                mappingData.requestPath.setChars
+                    (path.getBuffer(), path.getStart(), path.getLength());
+                mappingData.wrapperPath.setChars
+                    (path.getBuffer(), path.getStart(), path.getLength());
+            }
+            // Redirection to a folder
+            char[] buf = path.getBuffer();
+            if (contextVersion.resources != null && buf[pathEnd -1 ] != '/') {
+                Object file = null;
+                String pathStr = path.toString();
+                try {
+                    file = contextVersion.resources.lookup(pathStr);
+                } catch(NamingException nex) {
+                    // Swallow, since someone else handles the 404
+                }
+                if (file != null && file instanceof DirContext) {
+                    // Note: this mutates the path: do not do any processing
+                    // after this (since we set the redirectPath, there
+                    // shouldn't be any)
+                    path.setOffset(pathOffset);
+                    path.append('/');
+                    mappingData.redirectPath.setChars
+                        (path.getBuffer(), path.getStart(), path.getLength());
+                } else {
+                    mappingData.requestPath.setString(pathStr);
+                    mappingData.wrapperPath.setString(pathStr);
+                }
+            }
+        }
 
-##案例分析
+        path.setOffset(pathOffset);
+        path.setEnd(pathEnd);
 
-##filter的url-pattern的规则
+    }
+
+长长的匹配规则，我们仅仅了解下大概的匹配顺序就可以了，匹配顺序如下：
+
+-	(1)首先精准匹配
+
+-	(2)然后是通配符匹配
+
+-	(3)然后是扩展名匹配
+
+-	(4)然后是欢迎页面匹配
+
+-	(5)最后是默认匹配
+
+
+##案例分析（结合源码）
+
+###welcome-file-list的作用
 
 
 
