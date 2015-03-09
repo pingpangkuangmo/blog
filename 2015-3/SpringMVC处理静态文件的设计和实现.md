@@ -2,7 +2,7 @@
 
 最近想把SpringMVC对于静态资源的处理策略弄清楚，如它和普通的请求有什么区别吗？
 
-有人可能就要说了，现在有些静态资源都不是交给这些框架来处理，而是直接交给容器来处理，这样更加高效。我想说的是，即使是这样，处理静态资源也是MVC框架应该提供的功能，而不是依靠外界。
+有人可能就要说了，现在有些静态资源都不是交给这些框架来处理，而是直接交给容器来处理，这样更加高效。我想说的是，虽然是这样，处理静态资源也是MVC框架应该提供的功能，而不是依靠外界。
 
 这里以tomcat容器中的SpringMVC项目为例。整个静态资源的访问，效果图如下：
 
@@ -332,7 +332,7 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 
 这时候就，没有了JspServlet，不会进行相应的翻译工作，而是使用DefaultServlet直接将该文件内容进行返回。
 
-因为tomcat默认配置了，映射 / 的DefaultServlet和映射 *.jsp 的JspServlet。在初始化web.xml的时候，上文讲的Mapper类按照归类规则，DefaultServlet作为了默认的servlet，JspServlet作为了扩展名的servlet，它比DefaultServlet的级别高，执行了扩展名匹配。当去掉JspServlet时，使用了DefaultServlet，执行了默认匹配，此时的jsp文件仅仅是一个一般的资源文件。
+因为tomcat默认配置了，映射 / 的DefaultServlet和映射 *.jsp 的JspServlet。在初始化web.xml的时候，上文讲的Mapper类按照归类规则，DefaultServlet作为了默认的servlet，JspServlet作为了扩展名的servlet，它比DefaultServlet的级别高，执行了扩展名匹配，所以返回了翻译后的jsp的内容。当去掉JspServlet时，使用了DefaultServlet，执行了默认匹配，此时的jsp文件仅仅是一个一般的资源文件，返回了jsp的原始内容。
 
 ##3.3 welcome-file-list案例
 
@@ -520,7 +520,7 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 	-	4c1: 尝试寻找能够处理该文件扩展名的servlet，即进行扩展名匹配,如果找到，则使用对应的servlet
 	-	4c2: 如果没找到，则默认使用defaultWrapper，即DefaultServlet（它只会将文件内容源码返回，不做任何处理）
 	
--	4d: 对全新的路径进行扩展名匹配（与4c的目的不同，4c的主要目的是想返回一个文件的内容，在返回内容前涉及到扩展名匹配）
+-	4d: 对全新的路径进行扩展名匹配（与4c的目的不同，4c的主要目的是想返回一个文件的内容，在返回内容前涉及到扩展名匹配，所以4c的前提是存在对应路径的文件）
 
 有了以上的规则，我们就来详细看看上文的4个案例都是走的哪个规则
 
