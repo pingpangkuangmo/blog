@@ -13,8 +13,7 @@
 -	tomcat根据url-pattern选择servlet的过程
 -	SpringMVC对静态资源的处理过程（这个留到下一篇文章来详细的源码说明）
 
-
-#tomcat的处理策略
+#2 tomcat的处理策略
 这里要看tomcat的源码，所以pom中加入相应依赖，使debug的时候能够定位到源码文件，目前我所使用的tomcat版本为7.0.55，你要是使用的不同版本，则更换下对应依赖的版本就行
 
 	<dependency>
@@ -36,7 +35,7 @@
 		<scope>provided</scope>
 	</dependency>
 
-##tomcat默认注册的servlet
+##2.1 tomcat默认注册的servlet
 tomcat默认注册了，映射 '/' 路径的的DefaultServlet，映射*.jsp和*.jspx的JspServlet，这些内容配置在tomcat的conf/web.xml文件中，如下：
 
 	<servlet>
@@ -63,49 +62,14 @@ tomcat默认注册了，映射 '/' 路径的的DefaultServlet，映射*.jsp和*.
 -	DefaultServlet可以用来处理tomcat一些资源文件
 -	JspServlet则用来处理一些jsp文件,对这些jsp文件进行一些翻译
 
-我们可以修改此配置文件，来添加或者删除一些默认的servlet配置，举个简单例子：tomcat的根路径下有一个a.jsp文件，这里再说明下，如果使用的是eclipse开发，则我们在其中新建的tomcat server的一些信息如下（这点很重要，有时候修改tomcat配置没起作用就是因为你修改的地方不对导致的）：
+我们可以修改此配置文件，来添加或者删除一些默认的servlet配置。
 
--	新建的tomcat server，是将你所安装的tomcat的配置进行复制后，存放在当前eclipse所在工作空间路径的server项目下，如下：
-![新建tomcat路径][2] 
+下面来看下这些servlet的url-pattern的规则是什么样的
 
-所以以后要修改所使用的tomcat信息，就直接在该项目下修改，或者直接去该项目的路径下，直接修改对应的配置文件
-
--	新建的tomcat server的运行环境不是你所安装的tomcat的webapps目录下，而是在当前eclipse所在的工作空间的.metadata文件下，具体如下：   .metadata\\.plugins\org.eclipse.wst.server.core ，这个目录下会有一个或多个tmp目录，每个tmp目录都对应着一个tomcat的真实运行环境，然后找到那个你所使用的tmp目录，你就会看到如下的信息
-![tomcat临时运行环境][3]
-
-这里的wtwebapps就是tomcat默认的发布根目录，这个是不固定的，可配置的。
-
-在这个根目录中，我们放一个jsp文件，文件内容如下：
-
-	<%@page contentType="text/html"%>
-	<%@page pageEncoding="UTF-8"%>
-	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
-	   "http://www.w3.org/TR/html4/loose.dtd">
-	<html>
-	    <head>
-	        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-	        <title>JSP Page</title>
-	    </head>
-	    <body>
-	    <h1>JSP Page</h1>
-	        Hello ${param.name}!
-	    </body>
-	</html>
-
-默认情况下，即JspServlet存在，访问 http://localhost:8080/a.jsp?name=lg ，结果如下：
-![jsp作为jsp的访问结果][4]
-
-如果你修改了tomcat的默认配置，去掉JspServlet的话，同样访问 http://localhost:8080/a.jsp?name=lg ，结果如下
-![jsp作为一般资源文件的访问结果][5]
-
-这时候就，没有了JspServlet，不会进行相应的翻译工作，而是使用DefaultServlet直接将该文件内容进行返回。
-
-在有JspServlet的情况下，JspServlet优先处理jsp文件，当不存在的情况下，才使用DefaultServlet来处理，他们到底是按照什么样的执行顺序呢？这就需要来说说在web.xml中配置的url-pattern了
-
-##servlet的url-pattern的规则
+##2.2 servlet的url-pattern的规则
 对于servlet的url-pattern规则，这里也有一篇对应的源码分析文章[tomcat的url-pattern源码分析](http://www.cnblogs.com/fangjian0423/p/servletContainer-tomcat-urlPattern.html)。
 
-###tomcat源码中的几个概念
+###2.2.1 tomcat源码中的几个概念
 在分析之前简单看下tomcat源码中的几个概念，Context、Wrapper、Servlet：
 
 -	Servlet 这个很清楚，就是继承了HttpServlet，用户用它的service方法来处理请求
@@ -163,7 +127,7 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 
 下面就来看看Mapper是如何进行归类处理的
 
-###Mapper的归类处理Servlet和映射信息
+###2.2.2 Mapper的归类处理Servlet和映射信息
 
 	protected void addWrapper(ContextVersion context, String path,
             Object wrapper, boolean jspWildCard, boolean resourceOnly) {
@@ -264,7 +228,7 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 
 初始化归类完成之后，当请求到来时，就需要利用已归类好的数据进行匹配了，找到合适的Servlet来响应
 
-###Mapper匹配请求对应的Servlet
+###2.2.3 Mapper匹配请求对应的Servlet
 
 在Mapper的internalMapWrapper方法中，存在着匹配规则，如下
 
@@ -326,9 +290,51 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 -	(5) 最后是默认匹配
 
 
-##案例分析（结合源码）
+#3 案例分析（结合源码）
 
-###welcome-file-list的作用
+在说明案例之前，需要先将eclipse中的tomcat信息说明白，有时候修改tomcat配置没起作用就是因为你修改的地方不对导致的
+
+##3.1 eclipse中tomcat的配置信息
+-	新建的tomcat server，是将你所安装的tomcat的配置进行复制后，存放在当前eclipse所在工作空间路径的server项目下，如下：
+![新建tomcat路径][2] 
+
+所以以后要修改所使用的tomcat信息，就直接在该项目下修改，或者直接去该项目的路径下，直接修改对应的配置文件
+
+-	新建的tomcat server的运行环境不是你所安装的tomcat的webapps目录下，而是在当前eclipse所在的工作空间的.metadata文件下，具体如下：   .metadata\\.plugins\org.eclipse.wst.server.core ，这个目录下会有一个或多个tmp目录，每个tmp目录都对应着一个tomcat的真实运行环境，然后找到那个你所使用的tmp目录，你就会看到如下的信息
+![tomcat临时运行环境][3]
+
+这里的wtwebapps就是tomcat默认的发布根目录，这个是不固定的，可配置的。
+
+##3.1 jsp的访问案例
+
+举个简单例子：tomcat的根路径下有一个a.jsp文件，就是上述的tomcat发布的根目录，在这个根目录中，我们放一个jsp文件，文件内容如下：
+
+	<%@page contentType="text/html"%>
+	<%@page pageEncoding="UTF-8"%>
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN"
+	   "http://www.w3.org/TR/html4/loose.dtd">
+	<html>
+	    <head>
+	        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+	        <title>JSP Page</title>
+	    </head>
+	    <body>
+	    <h1>JSP Page</h1>
+	        Hello ${param.name}!
+	    </body>
+	</html>
+
+默认情况下，即JspServlet存在，访问 http://localhost:8080/a.jsp?name=lg ，结果如下：
+![jsp作为jsp的访问结果][4]
+
+如果你修改了tomcat的默认配置，去掉JspServlet的话，同样访问 http://localhost:8080/a.jsp?name=lg ，结果如下
+![jsp作为一般资源文件的访问结果][5]
+
+这时候就，没有了JspServlet，不会进行相应的翻译工作，而是使用DefaultServlet直接将该文件内容进行返回。
+
+因为tomcat默认配置了，映射 / 的DefaultServlet和映射 *.jsp 的JspServlet。在初始化web.xml的时候，上文讲的Mapper类按照归类规则，DefaultServlet作为了默认的servlet，JspServlet作为了扩展名的servlet，比DefaultServlet的级别高，执行了扩展名匹配。当去掉JspServlet时，执行了默认匹配，此时的jsp文件仅仅是一个一般的资源文件。
+
+##3.2 welcome-file-list的作用
 
 
 
