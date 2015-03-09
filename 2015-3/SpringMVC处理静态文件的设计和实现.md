@@ -534,7 +534,7 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 
 至此，就把welcome-file-list彻底讲清楚了，有什么问题和疑问，欢迎提问
 
-#3 结束语
+#4 结束语
 
 了解了tomcat的url-pattern的规则后，下一篇文章就要说明SpringMVC是如何来处理静态资源的，以及他们的综合分析。
 
