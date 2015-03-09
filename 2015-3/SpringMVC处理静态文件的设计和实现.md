@@ -525,8 +525,11 @@ Mapper的内部类ContextVersion对映射对应的servlet进行了分类存储�
 有了以上的规则，我们就来详细看看上文的4个案例都是走的哪个规则
 
 -	案例1： a.html，4a、4b没有匹配到，到4c的时候，找到了该文件，然后又尝试扩展名匹配，来决定是走4c1还是4c2，由于.html还没有对应的servlet来处理，就使用了默认的DefaultServlet
+
 -	案例2： a.jsp，同上，在走到4c的时候，找到了处理.jsp对应的servlet，所以走了4c1
+
 -	案例3： a.action,如果根目录下有a.action文件，则走到4c1的时候，进行扩展名匹配，匹配到了SecondServlet，即走了4c1，使用SecondServlet来处理请求；如果根目录下没有a.action文件，则走到了4d，进行扩展名匹配，同样匹配到了SecondServlet，即走了4d，同样使用SecondServlet来处理请求
+
 -	案例4： first/abc，执行4b的时候，就匹配到了FirstServlet，所以使用FirstServlet来处理请求
 
 至此，就把welcome-file-list彻底讲清楚了，有什么问题和疑问，欢迎提问
