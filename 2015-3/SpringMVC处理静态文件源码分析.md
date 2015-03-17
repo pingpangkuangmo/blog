@@ -1,4 +1,4 @@
-SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:default-servlet-handler/>。在详细说明他们的原理之前，需要先简单说明下SpringMVC中请求处理机制：HandlerMapping和HandlerAdapter。
+SpringMVC处理静态资源，主要是两个标签，mvc:resources和mvc:default-servlet-handler。在详细说明他们的原理之前，需要先简单说明下SpringMVC中请求处理机制：HandlerMapping和HandlerAdapter。
 
 #1 HandlerMapping和HandlerAdapter的来由
 
@@ -107,25 +107,25 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 以上的几个HandlerMapping和HandlerAdapter属于SpringMVC最初的设计思路。即HandlerMapping和HandlerAdapter毫无关系，HandlerMapping只负责找到对应的handler，HandlerAdapter负责找到handler的哪个方法。然而随着注解的兴起，即@RequestMapping注解直接标注请求对应某个类的某个方法，使得后来的HandlerMapping和HandlerAdapter即 DefaultAnnotationHandlerMapping、AnnotationMethodHandlerAdapter 、RequestMappingHandlerMapping 、RequestMappingHandlerAdapter（前两者已被后两者取代）不再像之前的思路那样，开始争夺权力了，RequestMappingHandlerMapping 在寻找对应的handler时，不仅要匹配到对应的handler，还要找到对应的方法。它们具体详细的内容，可以参考我的之前的博客 [mvc:annotation-driven以及@Controller和@RequestMapping的那些事](http://lgbolgger.iteye.com/blog/2105108)
 
 接下来就轮到重点了（上面的铺垫够长的了，哈哈）
-#3 <mvc:resources>源码分析
+#3 mvc:resources源码分析
 
-来看下一般的<mvc:resources>的使用，如下：
+来看下一般的mvc:resources的使用，如下：
 
 	<mvc:resources location="/WEB-INF/views/css/**" mapping="/css/**"/>
 
-然后来看源码。首先要再次声明下，所有在xml中配置的标签，都会有对应的BeanDefinitionParser的实现类来进行处理，对于<mvc:resources>标签，对应的实现类是ResourcesBeanDefinitionParser，查看其中的源码（这里不再列出，自行去查看），可以知道
+然后来看源码。首先要再次声明下，所有在xml中配置的标签，都会有对应的BeanDefinitionParser的实现类来进行处理，对于mvc:resources标签，对应的实现类是ResourcesBeanDefinitionParser，查看其中的源码（这里不再列出，自行去查看），可以知道
 
-注册了一个SimpleUrlHandlerMapping（上文已提到）。它是拥有一个Map<String, Object> urlMap的，它把<mvc:resources>标签中的mapping属性作为key,把ResourceHttpRequestHandler作为handler。即/css/**类似的url请求，会由这个SimpleUrlHandlerMapping匹配到ResourceHttpRequestHandler上。
+注册了一个SimpleUrlHandlerMapping（上文已提到）。它是拥有一个Map<String, Object> urlMap的，它把mvc:resources标签中的mapping属性作为key,把ResourceHttpRequestHandler作为handler。即/css/**类似的url请求，会由这个SimpleUrlHandlerMapping匹配到ResourceHttpRequestHandler上。
 
 再看下，到底调用ResourceHttpRequestHandler的哪个方法来处理请求呢？
 
 ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的HttpRequestHandlerAdapter支持的handler类型，所以就会调用ResourceHttpRequestHandler的void handleRequest(HttpServletRequest request, HttpServletResponse response)方法
 
-其实很容易就明白了，ResourceHttpRequestHandler会根据<mvc:resources>标签中的location属性作为目录，去寻找对应的资源，然后返回资源的内容。这里就不再详细说明了，可以自行查看ResourceHttpRequestHandler的所实现的handleRequest方法。
+其实很容易就明白了，ResourceHttpRequestHandler会根据mvc:resources标签中的location属性作为目录，去寻找对应的资源，然后返回资源的内容。这里就不再详细说明了，可以自行查看ResourceHttpRequestHandler的所实现的handleRequest方法。
 
-#4 <mvc:default-servlet-handler/>源码分析
+#4 mvc:default-servlet-handler 源码分析
 
-同理，<mvc:default-servlet-handler/>标签对应的BeanDefinitionParser的实现类是DefaultServletHandlerBeanDefinitionParser。
+同理，mvc:default-servlet-handler标签对应的BeanDefinitionParser的实现类是DefaultServletHandlerBeanDefinitionParser。
 
 这里注册了SimpleUrlHandlerMapping，它的Map<String, Object> urlMap中存放了一个 key为/** ，对应的handler为DefaultServletHttpRequestHandler。即请求路径匹配 /* * 的时候，这个SimpleUrlHandlerMapping会交给DefaultServletHttpRequestHandler来处理。这种情况一般是其他HandlerMapping无法匹配处理，最后才无奈交给DefaultServletHttpRequestHandler。
 
@@ -145,7 +145,7 @@ ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的Htt
 		rd.forward(request, response);
 	}
 
-我们可以看到，这里其实就是转发给了web容器自身的servlet。这个servlet名称可以在<mvc:default-servlet-handler/>标签中进行配置，如果没有配置，采用默认的配置，如下：
+我们可以看到，这里其实就是转发给了web容器自身的servlet。这个servlet名称可以在mvc:default-servlet-handler标签中进行配置，如果没有配置，采用默认的配置，如下：
 
 	/** Default Servlet name used by Tomcat, Jetty, JBoss, and GlassFish */
 	private static final String COMMON_DEFAULT_SERVLET_NAME = "default";
@@ -172,7 +172,7 @@ ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的Htt
 
 ![综合案例][1]
 
-其中SpringMVC项目配置了<mvc:default-servlet-handler/>标签，接下来以SpringMVC的DispatcherServlet的两种配置进行说明，分别是
+其中SpringMVC项目配置了mvc:default-servlet-handler标签，接下来以SpringMVC的DispatcherServlet的两种配置进行说明，分别是
 
 	/ 和 /* 两种方式
 
@@ -196,13 +196,13 @@ ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的Htt
 
 访问a.html时：
 
--	当DispatcherServlet配置为 / 的时候，tomcat仍会选择SpringMVC的DispatcherServlet来处理a.html-》它也处理不了，交给默认配置的<mvc:default-servlet-handler/>来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet去寻找有没有该文件，找到了，返回文件内容
+-	当DispatcherServlet配置为 / 的时候，tomcat仍会选择SpringMVC的DispatcherServlet来处理a.html-》它也处理不了，交给默认配置的mvc:default-servlet-handler来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet去寻找有没有该文件，找到了，返回文件内容
 -	当DispatcherServlet配置为 /* 的时候，tomcat仍然是选择SpringMVC的DispatcherServlet来处理a.html，同上面是一样的过程
 
 访问a.jsp时：
 
 -	当DispatcherServlet配置为 / 的时候，tomcat会优先选择自己已经默认注册的JspServlet来处理-》JspServlet翻译文件内容，返回
--	当DispatcherServlet配置为 /* 的时候，tomcat会选择SpringMVC的DispatcherServlet来处理a.jsp-》发现SpringMVC找不到匹配的handler，交给配置的<mvc:default-servlet-handler/>来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet仅仅将a.jsp的源码内容进行返回
+-	当DispatcherServlet配置为 /* 的时候，tomcat会选择SpringMVC的DispatcherServlet来处理a.jsp-》发现SpringMVC找不到匹配的handler，交给配置的mvc:default-servlet-handler来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet仅仅将a.jsp的源码内容进行返回
 
   [1]: http://static.oschina.net/uploads/space/2015/0318/001034_uybG_2287728.png
   [2]: http://static.oschina.net/uploads/space/2015/0318/002526_QPsM_2287728.png
