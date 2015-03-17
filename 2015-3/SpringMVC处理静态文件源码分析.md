@@ -1,6 +1,6 @@
 SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:default-servlet-handler/>。在详细说明他们的原理之前，需要先简单说明下SpringMVC中请求处理机制：HandlerMapping和HandlerAdapter。
 
-#HandlerMapping和HandlerAdapter的来由
+#1 HandlerMapping和HandlerAdapter的来由
 
 用过python Django框架的都知道Django对于访问方式的配置就是，一个url路径和一个函数配对，你访问这个url，就会直接调用这个函数，简单明了
 
@@ -10,9 +10,9 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 
 -	第二步 找到了对应的handler之后，我们该调用这个handler的哪个方法呢？这就需要HandlerAdapter来决定
 
-#常用的HandlerMapping和HandlerAdapter简单介绍
+#2 常用的HandlerMapping和HandlerAdapter简单介绍
 
-##HandlerMapping接口设计和实现
+##2.1 HandlerMapping接口设计和实现
 
 	public interface HandlerMapping {
 		HandlerExecutionChain getHandler(HttpServletRequest request) throws Exception;
@@ -48,11 +48,12 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 		     </property>
 		</bean>
 
-##HandlerAdapter接口设计和实现
+##2.2 HandlerAdapter接口设计和实现
 
 	public interface HandlerAdapter {
 		boolean supports(Object handler);
-		ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception;
+		ModelAndView handle(HttpServletRequest request, HttpServletResponse response,
+				 Object handler) throws Exception;
 	}
 
 根据HandlerMapping找到了handler之后，我们该调用handler的哪个方法呢？handler又有哪些方法呢？这里就需要采用适配器的模式，对不同的handler进行不同的处理。因此HandlerAdapter的supports方法首先判断这个handler是否是我能支持的，如果能支持，那我就按照我的处理模式来处理，即调用上述的handle方法。
@@ -67,8 +68,8 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 				return (handler instanceof Servlet);
 			}
 			@Override
-			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
-					throws Exception {
+			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response
+					, Object handler)throws Exception {
 				((Servlet) handler).service(request, response);
 				return null;
 			}
@@ -82,8 +83,8 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 				return (handler instanceof Controller);
 			}
 			@Override
-			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
-					throws Exception {
+			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response
+					, Object handler)throws Exception {
 				return ((Controller) handler).handleRequest(request, response);
 			}
 		}
@@ -96,8 +97,8 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 				return (handler instanceof HttpRequestHandler);
 			}
 			@Override
-			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response, Object handler)
-					throws Exception {
+			public ModelAndView handle(HttpServletRequest request, HttpServletResponse response
+					, Object handler)throws Exception {
 				((HttpRequestHandler) handler).handleRequest(request, response);
 				return null;
 			}
@@ -106,7 +107,7 @@ SpringMVC处理静态资源，主要是两个标签，<mvc:resources>和<mvc:def
 以上的几个HandlerMapping和HandlerAdapter属于SpringMVC最初的设计思路。即HandlerMapping和HandlerAdapter毫无关系，HandlerMapping只负责找到对应的handler，HandlerAdapter负责找到handler的哪个方法。然而随着注解的兴起，即@RequestMapping注解直接标注请求对应某个类的某个方法，使得后来的HandlerMapping和HandlerAdapter即 DefaultAnnotationHandlerMapping、AnnotationMethodHandlerAdapter 、RequestMappingHandlerMapping 、RequestMappingHandlerAdapter（前两者已被后两者取代）不再像之前的思路那样，开始争夺权力了，RequestMappingHandlerMapping 在寻找对应的handler时，不仅要匹配到对应的handler，还要找到对应的方法。它们具体详细的内容，可以参考我的之前的博客 [mvc:annotation-driven以及@Controller和@RequestMapping的那些事](http://lgbolgger.iteye.com/blog/2105108)
 
 接下来就轮到重点了（上面的铺垫够长的了，哈哈）
-#<mvc:resources>源码分析
+#3 <mvc:resources>源码分析
 
 来看下一般的<mvc:resources>的使用，如下：
 
@@ -122,7 +123,7 @@ ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的Htt
 
 其实很容易就明白了，ResourceHttpRequestHandler会根据<mvc:resources>标签中的location属性作为目录，去寻找对应的资源，然后返回资源的内容。这里就不再详细说明了，可以自行查看ResourceHttpRequestHandler的所实现的handleRequest方法。
 
-#<mvc:default-servlet-handler/>源码分析
+#4 <mvc:default-servlet-handler/>源码分析
 
 同理，<mvc:default-servlet-handler/>标签对应的BeanDefinitionParser的实现类是DefaultServletHandlerBeanDefinitionParser。
 
@@ -165,7 +166,46 @@ ResourceHttpRequestHandler实现了HttpRequestHandler，即是上文提到的Htt
 
 其实这个时候，请求先经过tomcat的servlet的url-pattern的匹配，进入到了SpringMVC,然后经过SpringMVC的HandlerMapping的一系列匹配，没有对应的handler匹配，导致又再次转发给tomcat等默认的servlet上了，绕了很大的弯，所以要尽量避免这样的操作。
 
-#结合tomcat的url-pattern来综合案例
+#5 结合tomcat的url-pattern来综合案例
+
+这里举一个案例进行分析，在tomcat发布的根目录中，有一个a.html和a.jsp文件，以及一个SpringMVC项目，如下：
+
+![综合案例][1]
+
+其中SpringMVC项目配置了<mvc:default-servlet-handler/>标签，接下来以SpringMVC的DispatcherServlet的两种配置进行说明，分别是
+
+	/ 和 /* 两种方式
+
+结果分别是：
+
+-	DispatcherServlet配置为 / 的时候，a.html和a.jsp都可以正常访问到，如下
+
+   
+	![访问a.html][2]
+    ![访问a.jsp][3]
+
+-	DispatcherServlet配置为 /* 的时候,a.html可以正常访问到，a.jsp就不行了，如下
+
+	![访问a.html][4]
+    ![访问a.jsp源码输出][5]
 
 
+分析如下：
 
+我们知道 /*的优先级大于 *.jsp的优先级，*.jsp的优先级大于 / （可以由我的上一篇文章了解到[tomcat的url-pattern的源码分析](http://my.oschina.net/pingpangkuangmo/blog/384580)），在这个前提下
+
+访问a.html时：
+
+-	当DispatcherServlet配置为 / 的时候，tomcat仍会选择SpringMVC的DispatcherServlet来处理a.html-》它也处理不了，交给默认配置的<mvc:default-servlet-handler/>来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet去寻找有没有该文件，找到了，返回文件内容
+-	当DispatcherServlet配置为 /* 的时候，tomcat仍然是选择SpringMVC的DispatcherServlet来处理a.html，同上面是一样的过程
+
+访问a.jsp时：
+
+-	当DispatcherServlet配置为 / 的时候，tomcat会优先选择自己已经默认注册的JspServlet来处理-》JspServlet翻译文件内容，返回
+-	当DispatcherServlet配置为 /* 的时候，tomcat会选择SpringMVC的DispatcherServlet来处理a.jsp-》发现SpringMVC找不到匹配的handler，交给配置的<mvc:default-servlet-handler/>来处理-》转发到tomcat默认的servlet的，即DefaultServlet来处理-》DefaultServlet仅仅将a.jsp的源码内容进行返回
+
+  [1]: http://static.oschina.net/uploads/space/2015/0318/001034_uybG_2287728.png
+  [2]: http://static.oschina.net/uploads/space/2015/0318/002526_QPsM_2287728.png
+  [3]: http://static.oschina.net/uploads/space/2015/0318/002558_LxJK_2287728.png
+  [4]: http://static.oschina.net/uploads/space/2015/0318/002526_QPsM_2287728.png
+  [5]: http://static.oschina.net/uploads/space/2015/0318/003004_oXIG_2287728.png
