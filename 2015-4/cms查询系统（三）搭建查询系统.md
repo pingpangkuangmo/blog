@@ -30,7 +30,8 @@
 
 #搭建查询demo
 
-下载查询demo工程，使用ide导入demo工程。
+下载查询demo工程，使用ide导入demo工程。工程地址如下:
+[search-demo工程](https://git.oschina.net/pingpangkuangmo/search-demo)
 
 -	第一步：准备数据库和数据
 
