@@ -21,6 +21,8 @@
 
 如果不想关心项目的源码，想直接获取jar包和源码包，下载地址如下：
 
+[search-sqlparams-1.3.0.jar和search-core-1.3.0.jar](https://git.oschina.net/pingpangkuangmo/blog/tree/master/2015-4/%E9%99%84%E4%BB%B6)
+
 #搭建查询demo
 
 下载查询demo工程，使用ide导入demo工程。
@@ -32,6 +34,17 @@
 -	第二步：修改项目中jdbc.properties的配置文件，改成你实际的配置
 
 -	第三步：在tomcat中运行该项目(部署路径设置为/)，访问http://localhost:8080/ 如下 **hello world** 形式，则表示项目搭建成功：![search-demo首页][1]
+
+如果直接使用的是jar包，没有安装到maven仓库，则需要去掉demo工程中的以下依赖
+
+	<!-- search -->
+	<dependency>
+		<groupId>com.dboper</groupId>
+  		<artifactId>search-core</artifactId>
+  		<version>1.3.0</version>
+	</dependency>
+
+然后将jar包直接放置到demo工程的classpath路径下
 
 #多样化的实体查询API
 
