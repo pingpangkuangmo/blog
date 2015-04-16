@@ -7,6 +7,11 @@
 -	search-sqlparams-1.3.0.jar   主要用于查询参数的解析
 -	search-core-1.3.0.jar  整体的查询流程体系，需要使用上述参数解析包
 
+上述两个项目地址分别如下：
+
+-	[search-sqlparams](https://git.oschina.net/pingpangkuangmo/search-sqlparams)
+-	[search-core](https://git.oschina.net/pingpangkuangmo/search-core)
+
 以search-sqlparams-1.3.0.jar为例来说下安装步骤：
 
 -	第一步：fork search-sqlparams 项目（这两个项目都是maven环境），把项目源代码拉取到本地
