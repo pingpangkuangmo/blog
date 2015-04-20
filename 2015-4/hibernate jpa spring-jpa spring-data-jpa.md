@@ -15,7 +15,7 @@
 从上面可以再进一步总结：
 
 -	事务的发展历程是什么样的？
--	对数据库的操作，xml方式和注解方式又是如何逐步演进的？
+-	对数据库的操作，xml方式和注解方式又是如何逐步简化的？
 
 #2 实验案例
 
@@ -496,7 +496,7 @@ SessionFactory、Session、Transaction 这些都是hibernate的原生的对象
 
 -	第三步：注册hibernate的事务管理器 HibernateTransactionManager
 
-		<bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<bean id="transactionManager" 	class="org.springframework.orm.hibernate4.HibernateTransactionManager">
 		    <property name="sessionFactory" ref="sessionFactory" />
 		</bean>
 
@@ -527,6 +527,8 @@ SessionFactory、Session、Transaction 这些都是hibernate的原生的对象
 
 sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentSession()是获取当前线程绑定的session,只不过这时候必须使用sessionFactory.getCurrentSession()才能使事务有效，还是为了保证业务代码中使用的session和事务代码中使用的session是同一个session(这样的话，就可以保证他们使用的connection是同一个connection)。
 
+所以这里需要进一步封装，使得用户获取session的时候，都是通过sessionFactory.getCurrentSession()来获取的
+
 来详细了解下save方法的整个前前后后：
 
 -	1	在执行save方法之前，使用了HibernateTransactionManager开启了相应的事务
@@ -543,11 +545,13 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 		HibernateTransactionObject txObject = (HibernateTransactionObject) transaction;
 		Session session = null;
 		try {
-			if (txObject.getSessionHolder() == null || txObject.getSessionHolder().isSynchronizedWithTransaction()) {
+			if (txObject.getSessionHolder() == null || txObject.getSessionHolder	
+						().isSynchronizedWithTransaction()) {
 				//1.1 先使用sessionFactory的openSession()来创建一个session
 				Interceptor entityInterceptor = getEntityInterceptor();
 				Session newSession = (entityInterceptor != null ?
-						getSessionFactory().withOptions().interceptor(entityInterceptor).openSession() :
+						getSessionFactory().withOptions().interceptor(entityInterceptor)
+						.openSession() :
 						getSessionFactory().openSession());
 				txObject.setSession(newSession);
 			}
@@ -555,7 +559,8 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 			if (this.prepareConnection && isSameConnectionForEntireSession(session)) {
 				//1.2 使用这个的session从dataSource中获取了一个connection
 				Connection con = ((SessionImplementor) session).connection();
-				Integer previousIsolationLevel = DataSourceUtils.prepareConnectionForTransaction(con, definition);
+				Integer previousIsolationLevel = DataSourceUtils.
+					prepareConnectionForTransaction(con, definition);
 				txObject.setPreviousIsolationLevel(previousIsolationLevel);
 			}
 			Transaction hibTx;
@@ -585,7 +590,8 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 			// Bind the session holder to the thread.
 			if (txObject.isNewSessionHolder()) {
 				//1.5 把当前session绑定到当前线程
-				TransactionSynchronizationManager.bindResource(getSessionFactory(), txObject.getSessionHolder());
+				TransactionSynchronizationManager.bindResource(
+					getSessionFactory(), txObject.getSessionHolder());
 			}
 			txObject.getSessionHolder().setSynchronizedWithTransaction(true);
 		}
@@ -606,6 +612,8 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 			}
 		}
 
-
+#未完待续
+	
+内容很多了，下一篇文章再介绍
 
 [1]: http://static.oschina.net/uploads/space/2015/0419/215253_knUQ_2287728.png
