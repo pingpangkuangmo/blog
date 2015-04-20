@@ -612,7 +612,84 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 			}
 		}
 
-#未完待续
+##3.6 hibernate的原生注解方式开发
+
+有了xml方式的经验后，就很容易理解注解方式了，不同点就是前者以实体映射的xml文件告诉sessionFactory，后者以类所在的包的形式告诉sessionFactory,所以可以参考[Hibernate的原生xml方式开发和事务的使用]()
+
+###3.6.1 项目地址
+
+-	[spring-hibernate-annotation](https://git.oschina.net/pingpangkuangmo/hibernate-jpa-spring/tree/master/spring-hibernate-annotation)
+
+###3.6.2 配置
+
+注解方式，就是把User实体的映射文件，改成注解配置，如下：
+
+	@Entity
+	@Table(name="user")
+	public class User {
+	
+		@Id
+		@GeneratedValue
+		private Long id;
+		private String name;
+		private int age;
+	}
+
+这里的注解用的是javax.persistence包中的注解。然后就是如何让hibernate知道User是一个实体呢？在hibernate的核心配置文件中hibernate.cfg.xml，这样来声明，使用mapping class：
+
+	<hibernate-configuration>
+	    <session-factory name="hibernateSessionFactory">
+	        <property name="hibernate.connection.driver_class">com.mysql.jdbc.Driver</property>
+	        <property name="hibernate.connection.password">ligang</property>
+	        <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/</property>
+	        <property name="hibernate.connection.username">root</property>
+	        <property name="hibernate.dialect">org.hibernate.dialect.MySQLDialect</property>
+	        <property name="hibernate.show_sql">true</property>
+	        <property name="hibernate.default_schema">test</property>
+
+	        <mapping class="com.demo.entity.User"/>
+
+	    </session-factory>
+	</hibernate-configuration>
+
+##3.7 hibernate的注解方式开发和事务的使用
+
+可以参考[Hibernate与spring集成方式开发和事务的使用]()
+
+###3.7.1 项目地址
+
+-	[spring-hibernate-annotation-tx](https://git.oschina.net/pingpangkuangmo/hibernate-jpa-spring/tree/master/spring-hibernate-annotation-tx)
+
+
+###3.7.2 配置与使用
+
+参考[Hibernate与spring集成方式开发和事务的使用]()
+
+他们的不同点还是将User实体告诉sessionFactory的方式不同,如下：
+
+-	xml方式：
+
+		<bean id="sessionFactory"        class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		    <property name="mappingResources">
+		        <list>
+		            <value>hibernate/mapping/User.hbm.xml</value>
+		        </list>
+		    </property>
+		 	//其他略
+		</bean>
+-	注解方式：
+
+		<bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		    <property name="packagesToScan">
+		        <list>
+		        	<value>com.demo.entity</value>
+		        </list>
+		    </property>
+		   	//其他略
+		</bean>
+
+
+#4 未完待续
 	
 内容很多了，下一篇文章再介绍
 
