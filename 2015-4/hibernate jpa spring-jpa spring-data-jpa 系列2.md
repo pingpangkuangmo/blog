@@ -184,15 +184,15 @@
 	我们可以看到spring是使用了一个工厂bean来创建entityManagerFactory。虽然配置的是一个工厂bean，但是容器在根据id来获取bean的时候，返回的是该工厂bean所创建的实体，即LocalContainerEntityManagerFactoryBean所创建的EntityManagerFactory。
 
 	spring创建EntityManagerFactory有2中方式，如下图所示：
-![spring创建EntityManagerFactory有2中方式][1]
+	![spring创建EntityManagerFactory有2中方式][1]
 
 	-	LocalEntityManagerFactoryBean	
 
-		使用jpa定义的PersistenceProvider来创建EntityManagerFactory，详见上文的PersistenceProvider接口定义
+		-	方式1：当本身指定了PersistenceProvider，就使用该PersistenceProvider来创建EntityManagerFactory，详见上文的PersistenceProvider接口定义
 	
-		使用上文jpa原生方式的：
+		-	方式2：使用上文jpa原生方式的：
 			
-			EntityManagerFactory entityManagerFactory=Persistence.createEntityManagerFactory("test");
+				EntityManagerFactory entityManagerFactory=Persistence.createEntityManagerFactory("test");
 		
 		LocalEntityManagerFactoryBean的源码如下：
 
@@ -223,7 +223,8 @@
 
 		的过程，它其实也是先获取所有的PersistenceProvider，然后遍历PersistenceProvider来创建EntityManagerFactory，源码如下：
 
-			public static EntityManagerFactory createEntityManagerFactory(String persistenceUnitName, Map properties) {
+			public static EntityManagerFactory createEntityManagerFactory(String 			
+							persistenceUnitName, Map properties) {
 				EntityManagerFactory emf = null;
 				List<PersistenceProvider> providers = getProviders();
 				for ( PersistenceProvider provider : providers ) {
@@ -233,15 +234,43 @@
 					}
 				}
 				if ( emf == null ) {
-					throw new PersistenceException( "No Persistence provider for EntityManager named " + persistenceUnitName );
+					throw new PersistenceException( "No Persistence provider 
+						for EntityManager named " + persistenceUnitName );
 				}
 				return emf;
 			}
 
 		那它是如何来获取所有的PersistenceProvider的呢？
 
-			其实使用classLoader到类路径下加载所有的PersistenceProvider
+		这里就用到了<font color="red">**java的SPI机制**</font>。
+
+		如下简单说明下，详细内容可以自行搜索：
+
+		-	jpa定义了PersistenceProvider接口
+		-	Hibernate要实现这个接口，在hibernate-entitymanager这个jar包中，在META-INF/services文件夹下，会有一个以PersistenceProvider接口全称命名的文件，如下图所示：
+
+		![PersistenceProvider的SPI机制][2]
+
+		文件里面的内容就是该接口对应的实现类，内容如下：
+
+			org.hibernate.jpa.HibernatePersistenceProvider
+			# The deprecated provider, logs warnings when used.
+			org.hibernate.ejb.HibernatePersistence
+
+		这就很容易方便jpa来寻找PersistenceProvider所有的实现类
+
 	-	LocalContainerEntityManagerFactoryBean
+
+		它创建一个PersistenceProvider需要两个重要的元素
+
+		-	dataSource 
+		
+			不再像原生的jpa那样直接使用核心配置文件中的连接信息（这些连接信息是配置给PersistenceProvider的）
+		
+		-	jpaVendorAdapter
+
+			
+			
 
 
 	
@@ -260,3 +289,4 @@
 
 
 [1]: http://static.oschina.net/uploads/space/2015/0421/073016_K8Bs_2287728.png
+[2]: http://static.oschina.net/uploads/space/2015/0421/193110_JzAd_2287728.png
