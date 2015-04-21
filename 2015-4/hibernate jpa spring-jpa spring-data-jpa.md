@@ -1,9 +1,10 @@
 #1 需要解决的疑惑
 
-目前jdbc、hibernate、jpa、spring之间有着千丝万缕的关系。在使用它们的时候有着各种各样的配置，初学者很容易分不清到底各自都做了什么事情，如果对自己要求高点，那就测试下下面几个问题：
+目前jdbc、jdbcTemplate、hibernate、jpa、spring之间有或多或少的关系。在使用它们的时候有着各种各样的配置，初学者很容易分不清到底各自都做了什么事情，如果对自己要求高点，那就测试下下面几个问题：
 
 -	jdbc的几个主要对象是什么？
 -	jdbc的原生方式是什么样的？怎么配置？怎么使用事务？
+-	jdbcTemplate又是如何封装jdbc的？怎么使用事务？
 -	hibernate的几个主要对象是什么？
 -	hibernate的原生xml方式是什么样的？注解方式是什么样？怎么配置？怎么使用事务？
 -	为什么会出现jpa?如果是你来设计，你该如何来设计jpa?同时事务又怎么办？
@@ -58,7 +59,7 @@
 
 目前使用的hibenrate版本是最新的4.3.8.Final。
 
-##3.2 jdbc开发
+##3.2 jdbc开发和事务的使用
 
 ###3.2.1 项目地址
 
@@ -99,7 +100,7 @@
 
 针对上述问题，spring开发了JdbcTemplate来完成相应的封装
 
-##3.3 spring-jdbcTemplate开发
+##3.3 spring-jdbcTemplate开发和事务的使用
 
 ###3.3.1 项目地址
 
@@ -200,7 +201,14 @@
 	conn.commit();
 	conn.rollback();	
 
-我们还知道一个重要信息就是，jdbc中执行sql的Connection和执行事务功能的的Connection是同一个Connection,这是非常需要明确的一点。因为要实现业务代码和事务代码的分离，所以必须要确保分离之后的两者使用的是同一个Connection，否则事务是不起作用的。
+我们还知道一个重要信息就是：
+<font color=red>
+
+-	**jdbc中执行sql的Connection和执行事务功能的的Connection必须是同一个Connection**
+
+
+这是非常需要明确的一点，因为后面要实现业务代码和事务代码的分离，所以必须要确保分离之后的两者使用的是同一个Connection，否则事务是不起作用的。
+</font>
 
 而Spring的@Transactional背后，则是使用SpringAOP来对我们的UserDao进行了代理。代理的方式有2种，jdk代理或者cglib代理。
 如UserDao的实例是我们要代理的对象，暂且称作target
@@ -215,6 +223,7 @@
 	<tx:annotation-driven proxy-target-class="true" transaction-manager="transactionManager"/>
 
 中采用的是proxy-target-class="true" 表示我们要使用cglib来进行代理，所以我们在使用UserDao的时候其实是使用的代理对象，这个代理对象其实是继承了UserDao，同时内部包含一个UserDao的实例，如下所示：
+
 ![我们实际使用的UserDao][1]
 
 这个代理对象加入了事务拦截器TransactionInterceptor,可以想象成在真正执行代理对象内部target的save方法时，代理对象已经在外部进行了一层try catch包裹，在执行save的过程中，一旦发现异常，就使用transactionManager来进行事务的回滚。
@@ -240,7 +249,7 @@
 
 jdbcTemplate只是简化了开发，仍然使用手写sql的方式来开发，没有使用orm，接下来就看看orm框架hibernate
 
-##3.4 hibernate的原生xml方式开发
+##3.4 Hibernate的原生xml方式开发和事务的使用
 
 ###3.4.1 项目地址
 
@@ -312,7 +321,7 @@ hibernate的原生xml方式涉及到2种配置文件
 
 		这种方式会在classpath路径下寻找hibernate/mapping/User.cfg.xml。
 
-注意，写路径的时候不要再写classpath : 了。
+注意，写路径的时候不要再写**classpath:** 了。
 
 ###3.4.3 主要的对象
 
@@ -324,7 +333,7 @@ SessionFactory、Session、Transaction 这些都是hibernate的原生的对象
 
 -	Session
 	
-	简单理解起来就是：Session和jdbc中一个Connection差不多，用于执行一些sql
+	简单理解起来就是：Session和jdbc中一个Connection差不多，Session对Connection进行了封装		
 
 -	Transaction
 
@@ -380,7 +389,14 @@ SessionFactory、Session、Transaction 这些都是hibernate的原生的对象
 		}
 	}
 
-先根据hibernate.cfg.xml配置文件来创建SessionFactory，然后我们每次就可以通过SessionFactory来获取一个Session，然后通过Session来开启一个事务Transaction，来回滚或者提交
+先根据hibernate.cfg.xml配置文件来创建SessionFactory，然后我们每次就可以通过SessionFactory来获取一个Session，然后通过Session来开启一个事务Transaction，来回滚或者提交。
+
+这里其实对业务代码和事务代码做了一定的分离：
+
+-	业务代码由Session来完成
+-	事务代码由Transaction来完成
+
+我们就需要明确的一点就是，这两个对象的Connection必须是同一个Connection。
 
 对于这个Transaction是如何实现的呢？来看下Transaction接口的实现类：
 
@@ -612,9 +628,9 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 			}
 		}
 
-##3.6 hibernate的原生注解方式开发
+##3.6 hibernate的原生注解方式开发和事务的使用
 
-有了xml方式的经验后，就很容易理解注解方式了，不同点就是前者以实体映射的xml文件告诉sessionFactory，后者以类所在的包的形式告诉sessionFactory,所以可以参考[Hibernate的原生xml方式开发和事务的使用]()
+有了xml方式的经验后，就很容易理解注解方式了，不同点就是前者以实体映射的xml文件告诉sessionFactory，后者以类所在的包的形式告诉sessionFactory,所以可以参考[Hibernate的原生xml方式开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_12)
 
 ###3.6.1 项目地址
 
@@ -652,9 +668,9 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 	    </session-factory>
 	</hibernate-configuration>
 
-##3.7 hibernate的注解方式开发和事务的使用
+##3.7 hibernate的注解方式开发与Spring集成和事务的使用
 
-可以参考[Hibernate与spring集成方式开发和事务的使用]()
+可以参考参考[hibernate的原生xml方式与spring集成以及事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_17)
 
 ###3.7.1 项目地址
 
@@ -663,7 +679,7 @@ sessionFactory.openSession()是新开启一个session,sessionFactory.getCurrentS
 
 ###3.7.2 配置与使用
 
-参考[Hibernate与spring集成方式开发和事务的使用]()
+参考[hibernate的原生xml方式与spring集成以及事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_17)
 
 他们的不同点还是将User实体告诉sessionFactory的方式不同,如下：
 

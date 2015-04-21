@@ -1,11 +1,11 @@
 #1 前面的文章索引
 
--	[jdbc的使用和事务]()
--	[JdbcTemplate的使用和事务]()
--	[Hibernate的原生xml方式开发和事务的使用]()
--	[Hibernate与spring集成的xml方式开发和事务的使用]()
--	[Hibernate的原生注解方式开发和事务的使用]()
--	[Hibernate与spring集成的注解方式开发和事务的使用]()
+-	[jdbc开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_5)
+-	[spring-jdbcTemplate开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_8)
+-	[hibernate的原生xml方式开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_12)
+-	[hibernate的原生xml方式与spring集成以及事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_17)
+-	[hibernate的原生注解方式开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_21)
+-	[hibernate的注解方式开发与Spring集成和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_24)
 
 #2 jpa原生开发
 
@@ -51,9 +51,17 @@
 
 ##2.4 jpa的几个重要对象说明
 
+**强烈建议与Hibenrate的几个重要的原生对象进行对比，地址**[Hibernate的原生xml方式开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_12)
+
 -	PersistenceProvider接口： 
 
-	根据核心配置文件能创建出EntityManagerFactory
+	根据核心配置文件能创建出EntityManagerFactory，接口定义如下：
+
+		public interface PersistenceProvider {
+			public EntityManagerFactory createEntityManagerFactory(String emName, Map map);
+			public EntityManagerFactory createContainerEntityManagerFactory(PersistenceUnitInfo info, Map map);
+			//略
+		}
 
 	jpa仅仅是一层接口规范，不同的底层的实现者提供各自的provider。如hibernate提供的provider实现是org.hibernate.jpa.HibernatePersistenceProvider
 
@@ -79,7 +87,7 @@
 
 -	EntityTransaction接口：
 
-	jpa定义的事务接口，其实可以类似于Hibernate的Transaction接口。对于Hibernate来说，其实它就是对Transaction的封装。Hibernate实现的EntityTransaction是TransactionImpl，源码如下：
+	jpa定义的事务接口，其实可以类似于Hibernate原生的的Transaction接口。对于Hibernate来说，其实它就是对Transaction的封装。Hibernate实现的EntityTransaction是TransactionImpl，源码如下：
 
 		public class TransactionImpl implements EntityTransaction {
 
@@ -89,24 +97,40 @@
 
 ##2.5 jpa的使用案例
 
-	public void save(User user){
-		EntityManager entityManager=jpaDao.getEntityManager();
-		EntityTransaction tx=null;
-		try {
-			tx=entityManager.getTransaction();
-			tx.begin();
-			entityManager.persist(user);
-			tx.commit();
-		} catch (Exception e) {
-			if(tx!=null){
-				tx.rollback();
-			}
-		}finally{
-			entityManager.close();
+	@Repository
+	public class JpaDao {
+		private EntityManagerFactory entityManagerFactory;
+		public JpaDao(){
+			entityManagerFactory=Persistence.createEntityManagerFactory("test");
+		}
+		public EntityManager getEntityManager(){
+			return entityManagerFactory.createEntityManager();
 		}
 	}
 
-我们可以看到，和Hibernate的过程非常相似，只不过把Hibernate的那一套对象换成了对应的jpa对象。
+	@Repository
+	public class UserDao {
+		@Autowired
+		private JpaDao jpaDao;
+		public void save(User user){
+			EntityManager entityManager=jpaDao.getEntityManager();
+			EntityTransaction tx=null;
+			try {
+				tx=entityManager.getTransaction();
+				tx.begin();
+				entityManager.persist(user);
+				tx.commit();
+			} catch (Exception e) {
+				if(tx!=null){
+					tx.rollback();
+				}
+			}finally{
+				entityManager.close();
+			}
+		}
+	}
+
+我们可以看到，上述的save过程和Hibernate的过程非常相似，只不过把Hibernate的那一套对象换成了对应的jpa对象。
 
 #3 jpa与spring的集成
 
@@ -157,8 +181,82 @@
 			<property name="packagesToScan" value="com.demo.entity"/>
 		</bean>
 
-	我们可以看到spring是使用了一个工厂bean来创建entityManagerFactory。虽然配置的是一个工厂bean，但是容器在根据id来获取bean的时候，返回的是该工厂bean所创建的实体，即LocalContainerEntityManagerFactoryBean所创建的EntityManagerFactory
+	我们可以看到spring是使用了一个工厂bean来创建entityManagerFactory。虽然配置的是一个工厂bean，但是容器在根据id来获取bean的时候，返回的是该工厂bean所创建的实体，即LocalContainerEntityManagerFactoryBean所创建的EntityManagerFactory。
 
+	spring创建EntityManagerFactory有2中方式，如下图所示：
+![spring创建EntityManagerFactory有2中方式][1]
+
+	-	LocalEntityManagerFactoryBean	
+
+		使用jpa定义的PersistenceProvider来创建EntityManagerFactory，详见上文的PersistenceProvider接口定义
+	
+		使用上文jpa原生方式的：
+			
+			EntityManagerFactory entityManagerFactory=Persistence.createEntityManagerFactory("test");
+		
+		LocalEntityManagerFactoryBean的源码如下：
+
+			public class LocalEntityManagerFactoryBean extends AbstractEntityManagerFactoryBean {
+
+				@Override
+				protected EntityManagerFactory createNativeEntityManagerFactory() 
+						throws PersistenceException {
+					PersistenceProvider provider = getPersistenceProvider();
+					if (provider != null) {
+						// Create EntityManagerFactory directly through PersistenceProvider.
+						EntityManagerFactory emf = provider.createEntityManagerFactory
+							(getPersistenceUnitName(), getJpaPropertyMap());
+						return emf;
+					}
+					else {
+						// Let JPA perform its standard PersistenceProvider autodetection.
+						return Persistence.createEntityManagerFactory(
+							getPersistenceUnitName(), getJpaPropertyMap());
+					}
+				}
+				//略了部分内容
+			}
+
+		我们再详细了解下上述：
+
+			EntityManagerFactory entityManagerFactory=Persistence.createEntityManagerFactory("test");
+
+		的过程，它其实也是先获取所有的PersistenceProvider，然后遍历PersistenceProvider来创建EntityManagerFactory，源码如下：
+
+			public static EntityManagerFactory createEntityManagerFactory(String persistenceUnitName, Map properties) {
+				EntityManagerFactory emf = null;
+				List<PersistenceProvider> providers = getProviders();
+				for ( PersistenceProvider provider : providers ) {
+					emf = provider.createEntityManagerFactory( persistenceUnitName, properties );
+					if ( emf != null ) {
+						break;
+					}
+				}
+				if ( emf == null ) {
+					throw new PersistenceException( "No Persistence provider for EntityManager named " + persistenceUnitName );
+				}
+				return emf;
+			}
+
+		那它是如何来获取所有的PersistenceProvider的呢？
+
+			其实使用classLoader到类路径下加载所有的PersistenceProvider
+	-	LocalContainerEntityManagerFactoryBean
+
+
+	
 	
 
 
+
+
+
+
+
+
+
+
+
+
+
+[1]: http://static.oschina.net/uploads/space/2015/0421/073016_K8Bs_2287728.png
