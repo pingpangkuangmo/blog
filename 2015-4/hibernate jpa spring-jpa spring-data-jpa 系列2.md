@@ -7,6 +7,10 @@
 -	[hibernate的原生注解方式开发和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_21)
 -	[hibernate的注解方式开发与Spring集成和事务的使用](http://my.oschina.net/pingpangkuangmo/blog/404280#OSC_h2_24)
 
+详见第一篇文章[jdbc-jdbcTemplate-hibernate-jpa-springDataJpa系列（一）](http://my.oschina.net/pingpangkuangmo/blog/404280)
+
+这里继续第一篇文章的内容，开始介绍jpa
+
 #2 jpa原生开发和事务的使用
 
 ##2.1 jpa的来源
@@ -391,19 +395,205 @@ spring创建EntityManagerFactory有2中方式，如下图所示：
 总之使用@Transactional注解式的事务，总要使用ThreadLocal模式来保证业务代码和事务代码中的使用的connection是一致的这一原则。
 
 
-#多数据源下jpa与spring集成
+#4 多数据源下jpa与spring集成开发和事务的使用
 
+##4.1 项目地址
 
+-	[spring-springjpa-hibernate-multDataSource](https://git.oschina.net/pingpangkuangmo/hibernate-jpa-spring/tree/master/spring-springjpa-hibernate-multDataSource)
 
+##4.2 配置
 
+###4.2.1 配置两个数据库连接池dataSource
 
+	<bean id="dataSource1"   
+        class="com.mchange.v2.c3p0.ComboPooledDataSource"   
+        destroy-method="close">   
+        <property name="driverClass">   
+            <value>${jdbc1.driverClass}</value>   
+        </property>   
+        <property name="jdbcUrl">   
+            <value>${jdbc1.url}</value>   
+        </property>   
+        //略，见项目中的配置
+    </bean>
+    
+     <!-- 配置数据源 -->
+     <bean id="dataSource2"   
+        class="com.mchange.v2.c3p0.ComboPooledDataSource"   
+        destroy-method="close">   
+        <property name="driverClass">   
+            <value>${jdbc2.driverClass}</value>   
+        </property>   
+        <property name="jdbcUrl">   
+            <value>${jdbc2.url}</value>   
+        </property>   
+        //略，见项目中的配置 
+    </bean>
 
+记得根据配置创建相应的数据库和表
 
+###4.2.2 配置2个entityManagerFactory
 
+	<bean id="jpaVendorAdapter" class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter">
+	    <property name="database" value="MYSQL"/>
+	    <property name="showSql" value="true"/>
+	    <property name="generateDdl" value="true"/>
+	    <property name="databasePlatform" value="org.hibernate.dialect.MySQLDialect"/>
+	</bean>
+    
+    <bean id="entityManagerFactory1" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+		<property name="dataSource" ref="dataSource1"/>
+		<property name="jpaVendorAdapter" ref="jpaVendorAdapter"/>
+		<property name="packagesToScan" value="com.demo.entity"/>
+	</bean>
+	
+	<bean id="entityManagerFactory2" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+		<property name="dataSource" ref="dataSource2"/>
+		<property name="jpaVendorAdapter" ref="jpaVendorAdapter"/>
+		<property name="packagesToScan" value="com.demo.entity"/>
+		<property name="persistenceUnitName" value="test2"/>
+	</bean>
 
+这两个entityManagerFactory使用不同的dataSource，各自有一个persistenceUnitName名字(持久化单元的名字)，分别叫"test1"和"test2"。在上文中，并没有配置persistenceUnitName，采用默认值"default"
 
+###4.2.3 配置2个事务管理器
 
+	<bean id="transactionManager1" class="org.springframework.orm.jpa.JpaTransactionManager">
+		<property name="entityManagerFactory" ref="entityManagerFactory1"></property>
+	</bean>
+	
+	<bean id="transactionManager2" class="org.springframework.orm.jpa.JpaTransactionManager">
+		<property name="entityManagerFactory" ref="entityManagerFactory2"></property>
+	</bean>
 
+###4.2.4 开启@Transactional的处理器
+
+	<tx:annotation-driven proxy-target-class="true"/>
+
+##4.3 使用方式
+
+	@Repository
+	public class UserDao {
+	
+		@PersistenceContext(unitName="test1")
+		private EntityManager entityManager;
+		@PersistenceContext(unitName="test2")
+		private EntityManager entityManagerTest2;
+		
+		@Transactional("transactionManager1")
+		public void save(User user){
+			entityManager.persist(user);
+		}
+		@Transactional("transactionManager2")
+		public void save2(User user){
+			entityManagerTest2.persist(user);
+		}
+	}
+
+@PersistenceContext(unitName="test1")表示使用persistenceUnitName="test1"的entityManagerFactory来创建EntityManager，同理@PersistenceContext(unitName="test2")也一样。
+
+如果有多个entityManagerFactory，但是只使用@PersistenceContext没有指定unitName，则会报错，spring不知道该选择哪一个，所以需要指定unitName的名字
+
+@Transactional("transactionManager1")表示使用id="transactionManager1"的JpaTransactionManager来作为事务管理器
+同理@Transactional("transactionManager2")也一样。
+
+多数据源就不再详细说明了
+
+#5 spring-data-jpa的开发和事务的使用
+
+##5.1 背景
+
+引用IBM的一篇文章[使用 Spring Data JPA 简化 JPA 开发](http://www.ibm.com/developerworks/cn/opensource/os-cn-spring-jpa/?ca=drs-)
+
+> Spring 对 JPA 的支持已经非常强大，开发者只需关心核心业务逻辑的实现代码，无需过多关注 EntityManager 的创建、事务处理等 JPA 相关的处理，这基本上也是作为一个开发框架而言所能做到的极限了。然而，Spring 开发小组并没有止步，他们再接再厉，于最近推出了 Spring Data JPA 框架，主要针对的就是 Spring 唯一没有简化到的业务逻辑代码，至此，开发者连仅剩的实现持久层业务逻辑的工作都省了，唯一要做的，就只是声明持久层的接口，其他都交给 Spring Data JPA 来帮你完成
+
+> 至此，读者可能会存在一个疑问，框架怎么可能代替开发者实现业务逻辑呢？毕竟，每一个应用的持久层业务甚至领域对象都不尽相同，框架是怎么做到的呢？其实这背后的思想并不复杂，比如，当你看到 UserDao.findUserById() 这样一个方法声明，大致应该能判断出这是根据给定条件的 ID 查询出满足条件的 User 对象。Spring Data JPA 做的便是规范方法的名字，根据符合规范的名字来确定方法需要实现什么样的逻辑
+
+这篇文章的内容已经很详细了，这里就仅仅详细地列出配置，真正跑起来
+
+##5.2 配置
+
+有了前面的基础后，就非常简单了
+
+###5.2.1 配置dataSource
+
+	<bean id="dataSource"   
+        class="com.mchange.v2.c3p0.ComboPooledDataSource"   
+        destroy-method="close">   
+        <property name="driverClass">   
+            <value>${jdbc.driverClass}</value>   
+        </property>   
+        <property name="jdbcUrl">   
+            <value>${jdbc.url}</value>   
+        </property>   
+        //略   
+    </bean>
+
+###5.2.2 配置entityManagerFactory
+
+	<bean id="jpaVendorAdapter" class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter">
+	    <property name="database" value="MYSQL"/>
+	    <property name="showSql" value="true"/>
+	    <property name="generateDdl" value="true"/>
+	    <property name="databasePlatform" value="org.hibernate.dialect.MySQLDialect"/>
+	</bean>
+    
+    <bean id="entityManagerFactory" class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+		<property name="dataSource" ref="dataSource"/>
+		<property name="jpaVendorAdapter" ref="jpaVendorAdapter"/>
+		<property name="packagesToScan" value="com.demo.entity"/>
+	</bean>
+
+###5.2.3 配置transactionManager
+
+	<bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+		<property name="entityManagerFactory" ref="entityManagerFactory"></property>
+	</bean>
+
+###5.2.4 开启@Transactional的处理器
+
+	<tx:annotation-driven proxy-target-class="true" transaction-manager="transactionManager"/>
+
+###5.2.5 配置要扫描的dao的路径
+
+	<jpa:repositories base-package="com.demo.dao"/>
+
+使用jpa命名空间的元素，需要加入如下jpa的约束配置：
+
+	<?xml version="1.0" encoding="UTF-8" ?>
+	<beans xmlns="http://www.springframework.org/schema/beans" 
+		xmlns:jpa="http://www.springframework.org/schema/data/jpa"
+		//略
+		xsi:schemaLocation="http://www.springframework.org/schema/beans
+	    http://www.springframework.org/schema/data/jpa
+	    http://www.springframework.org/schema/data/jpa/spring-jpa-1.2.xsd">
+
+我们之前需要自己手写一个UserDao，自己实现相应的方法，注入EntityManager，然后进行增删改查，现在不需要了，只需定义一个接口即可
+
+	public interface UserDao extends CrudRepository<User,Long>{
+
+	}
+
+CrudRepository<User,Long> 类型中的前者User表示User实体，后者Long表示User实体的主键类型
+
+##5.3 使用过程
+
+我们只需定义上述一个接口，即可在别的地方注入使用UserDao，来记性增删改查，如下:
+
+	@Autowired
+	private UserDao userDao;
+	
+	@Test
+	public void testSaveUser(){
+		User user=new User();
+		user.setName("王五");
+		user.setAge(22);
+		userDao.save(user);
+	}
+
+##5.4 spring-data-jpa实现的功能介绍
+
+上面仅仅是一个简单的使用例子，更多复杂的例子，见IBM的一篇文章[使用 Spring Data JPA 简化 JPA 开发](http://www.ibm.com/developerworks/cn/opensource/os-cn-spring-jpa/?ca=drs-)
 
 [1]: http://static.oschina.net/uploads/space/2015/0421/073016_K8Bs_2287728.png
 [2]: http://static.oschina.net/uploads/space/2015/0421/193110_JzAd_2287728.png

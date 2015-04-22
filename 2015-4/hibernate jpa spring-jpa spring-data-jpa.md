@@ -38,6 +38,8 @@
 
 -	spring-springjpa-hibernate:jpa的spring集成方式开发和事务的使用
 
+-	spring-springjpa-hibernate-multDataSource：多数据源下jpa与spring集成开发和事务的使用
+
 -	spring-data-jpa-hibernate：spring-data-jpa方式开发和事务的使用
 
 案例都是使用SpringMVC搭建的环境，主要是可以在此基础上方便开发。而学习过程的测试案例都是使用的是spring-test来进行测试的。
