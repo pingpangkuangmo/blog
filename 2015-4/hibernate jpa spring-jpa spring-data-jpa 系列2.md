@@ -388,6 +388,11 @@ spring创建EntityManagerFactory有2中方式，如下图所示：
 -	3 一旦出现异常，则使用1.1步骤中创建的EntityManagerImpl中的事务TransactionImpl来实现回滚
 
 总之，保证了业务代码和事务代码使用的是同一个EntityManager对象对象，所以可以正常回滚。
+总之使用@Transactional注解式的事务，总要使用ThreadLocal模式来保证业务代码和事务代码中的使用的connection是一致的这一原则。
+
+
+#多数据源下jpa与spring集成
+
 
 
 
