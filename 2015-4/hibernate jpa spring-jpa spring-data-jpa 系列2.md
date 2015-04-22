@@ -578,7 +578,7 @@ CrudRepository<User,Long> 类型中的前者User表示User实体，后者Long表
 
 ##5.3 使用过程
 
-我们只需定义上述一个接口，即可在别的地方注入使用UserDao，来记性增删改查，如下:
+我们只需定义上述一个接口，即可在别的地方注入使用UserDao，来进行增删改查，如下:
 
 	@Autowired
 	private UserDao userDao;
