@@ -17,11 +17,9 @@ java web开发就经常提到一项原则：面向接口编程，而不是面向
 
 #2 apache commons-logging
 
-##2.1 commons-logging的设计原理
-
 先从一个简单的使用案例来说明
 
-###2.1.1 简单的使用案例
+##2.1 简单的使用案例
 
 	private static Log logger=LogFactory.getLog(JulJclTest.class);
 	
@@ -39,7 +37,7 @@ java web开发就经常提到一项原则：面向接口编程，而不是面向
 
 上述Log、LogFactory都是commons-logging自己的接口和类
 
-###2.1.2 使用原理
+##2.2 使用原理
 
 上述获取Log的过程大致分成2个阶段
 
