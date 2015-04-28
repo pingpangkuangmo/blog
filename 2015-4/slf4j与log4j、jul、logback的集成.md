@@ -1,3 +1,14 @@
+#slf4j
+
+##slf4j的设计原理
+
+##slf4j与jcl集成
+
+##slf4j与log4j集成
+
+##slf4j与logback集成
+
+
 #log4j1
 现在已经出了log4j2，这里先说明log4j1
 ##使用案例
