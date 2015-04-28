@@ -106,9 +106,9 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 下面针对具体的日志框架，看看commons-logging是如何集成的
 
-##2.2 commons-logging与jcl集成
+#3 commons-logging与jcl集成
 
-###2.2.1 需要的jar包
+##3.1 需要的jar包
 
 -	commons-logging
 
@@ -120,7 +120,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 		<version>1.2</version>
 	</dependency>
 
-###2.2.2 使用案例
+##3.2 使用案例
 
 	private static Log logger=LogFactory.getLog(JulJclTest.class);
 	
@@ -141,7 +141,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 	四月 27, 2015 11:13:33 下午 com.demo.log4j.JulJclTest main
 	信息: commons-logging-jcl info message
 
-###2.2.3 使用案例分析
+##3.3 使用案例分析
 
 案例过程分析，就是看看上述commons-logging的在执行原理的过程中是如何来走的
 
@@ -189,9 +189,9 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 原生的jdk的logging的日志级别是FINEST、FINE、INFO、WARNING、SEVERE分别对应我们常见的trace、debug、info、warn、error。
 
-##2.3 commons-logging与log4j1集成
+#4 commons-logging与log4j1集成
 
-###2.3.1 需要的jar包
+##4.1 需要的jar包
 
 -	commons-logging
 -	log4j
@@ -209,7 +209,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 		<version>1.2.17</version>
 	</dependency>
 
-###2.3.2 使用案例
+##4.2 使用案例
 
 -	在类路径下加入log4j的配置文件
 
@@ -238,7 +238,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 上述是trace级别(小于debug)，所以trace、debug、info的都会显示出来
 
-###2.3.3 使用案例分析
+##4.3 使用案例分析
 
 案例过程分析，就是看看上述commons-logging的在执行原理的过程中是如何来走的:
 
@@ -274,9 +274,9 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 				
 上述过程最好与log4j1的原生方式对比着看，见[log4j1的原生方式](http://my.oschina.net/pingpangkuangmo/blog/406618#OSC_h1_5)	
 
-##2.4 commons-logging与log4j2集成
+#5 commons-logging与log4j2集成
 
-###2.4.1 需要的jar包
+##5.1 需要的jar包
 
 -	commons-logging
 -	log4j-api （log4j2的API包）
@@ -306,7 +306,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 	    <version>2.2</version>
 	</dependency>
 
-###2.4.2 使用案例
+##5.2 使用案例
 
 -	编写log4j2的配置文件，简单如下：
 
@@ -342,7 +342,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 仍然是使用commons-logging的Log接口和LogFactory来进行编写，看不到log4j2的影子。但是这时候含有上述几个jar包，log4j2就与commons-logging集成了起来。
 
-###2.4.3 使用案例分析
+##5.3 使用案例分析
 
 案例过程分析，就是看看上述commons-logging的在执行原理的过程中是如何来走的:
 
@@ -410,8 +410,124 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 上述过程最好与log4j2的原生方式对比着看，见[log4j2的原生方式](http://my.oschina.net/pingpangkuangmo/blog/406618#OSC_h1_11)		
 
-##2.5 commons-logging与logback集成
+#6 commons-logging与logback集成
 
+##6.1 需要的jar包
+
+-	jcl-over-slf4j (完全替代了commons-logging，下面详细说明)
+-	slf4j-api
+-	logback-core
+-	logback-classic
+
+对应的maven依赖是：
+
+	<dependency>
+		<groupId>org.slf4j</groupId>
+		<artifactId>jcl-over-slf4j</artifactId>
+		<version>1.7.12</version>
+	</dependency>
+	<dependency>
+		<groupId>org.slf4j</groupId>
+		<artifactId>slf4j-api</artifactId>
+		<version>1.7.12</version>
+	</dependency>
+	<dependency> 
+    	<groupId>ch.qos.logback</groupId> 
+    	<artifactId>logback-core</artifactId> 
+    	<version>1.1.3</version> 
+	</dependency> 
+	<dependency> 
+	    <groupId>ch.qos.logback</groupId> 
+	    <artifactId>logback-classic</artifactId> 
+	    <version>1.1.3</version> 
+	</dependency>
+
+##6.2 使用案例
+
+-	首先在类路径下编写logback的配置文件logback.xml，简单如下：
+
+		<?xml version="1.0" encoding="UTF-8"?>
+		<configuration>
+		  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+		    <encoder>
+		      <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+		    </encoder>
+		  </appender>
+		  <root level="DEBUG">          
+		    <appender-ref ref="STDOUT" />
+		  </root>  
+		</configuration>
+
+-	使用方式：
+
+		private static Log logger=LogFactory.getLog(LogbackTest.class);
 	
+		public static void main(String[] args){
+			if(logger.isTraceEnabled()){
+				logger.trace("commons-logging-jcl trace message");
+			}
+			if(logger.isDebugEnabled()){
+				logger.debug("commons-logging-jcl debug message");
+			}
+			if(logger.isInfoEnabled()){
+				logger.info("commons-logging-jcl info message");
+			}
+		}
+
+完全是用commons-logging的API来完成日志编写
+
+##6.3 使用案例分析
+
+logback本身的使用其实就和slf4j绑定了起来，现在要想指定commons-logging的底层log实现是logback，则需要2步走
+
+-	第一步： 先将commons-logging底层的log实现转向slf4j (jcl-over-slf4j干的事)
+-	第二步： 再根据slf4j的选择底层日志原理，我们使之选择上logback
+
+这样就可以完成commons-logging与logback的集成。即写着commons-logging的API，底层却是logback来进行输出
+
+然后来具体分析下整个过程的源码实现：
+
+-	1 先看下jcl-over-slf4j都有哪些内容(它可以替代了commons-logging)，如下图
+	![jcl转向slf4j][2]
+
+	-	1.1 commons-logging中的Log接口和LogFactory类等
+	
+		这是我们使用commons-logging编写需要的接口和类
+
+	-	1.2 去掉了commons-logging原生包中的一些Log实现和默认的LogFactoryImpl
+
+		只有SLF4JLog实现和SLF4JLogFactory
+
+	这就是jcl-over-slf4j的大致内容
+
+-	2 获取获取LogFactory的过程
+
+	jcl-over-slf4j包中的LogFactory和commons-logging中原生的LogFactory不一样，jcl-over-slf4j中的LogFactory直接限制死，是SLF4JLogFactory，源码如下：
+
+		public abstract class LogFactory {
+    		static LogFactory logFactory = new SLF4JLogFactory();
+			//略
+		}
+
+-	3 根据LogFactory获取Log的过程
+
+	这就需要看下jcl-over-slf4j包中的SLF4JLogFactory的源码内容：
+
+		Log newInstance;
+        Logger slf4jLogger = LoggerFactory.getLogger(name);
+        if (slf4jLogger instanceof LocationAwareLogger) {
+            newInstance = new SLF4JLocationAwareLog((LocationAwareLogger) slf4jLogger);
+        } else {
+            newInstance = new SLF4JLog(slf4jLogger);
+        }
+
+	可以看到其实是用slf4j的LoggerFactory先创建一个slf4j的Logger实例(这其实就是单独使用logback的使用方式，见[logback原生案例](http://my.oschina.net/pingpangkuangmo/blog/406618#OSC_h1_18))。
+
+	然后再将这个Logger实例封装成common-logging定义的Log接口实现，即SLF4JLog或者SLF4JLocationAwareLog实例，所以我们使用的SLF4JLog都是委托给slf4j创建的Logger实例（slf4j的这个实例又是选择logbakc后产生的，即slf4j产生的Logger实例最终还是委托给logback中的Logger的）
+
+#7 未完待续
+
+这篇讲解commons-logging与jul、log4j1、log4j2、logback的集成原理，内容很长了，就把slf4j与上述四者的集成放到下一篇文章
 
 [1]: http://static.oschina.net/uploads/space/2015/0428/074310_8b6K_2287728.png
+[2]: http://static.oschina.net/uploads/space/2015/0428/182614_Uqh8_2287728.png
