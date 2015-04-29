@@ -1,6 +1,11 @@
-#1 前言
+#1 系列目录
 
-前面介绍了jdk自带的logging、log4j1、log4j2、logback等实际的日志框架，对于开发者而言，每种日志都有不同的写法。如果我们以实际的日志框架来进行编写，代码就限制死了，之后就很难再更换日志系统，很难做到无缝切换。
+-	[jdk-logging、log4j、logback日志介绍及原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
+-	[jcl与jul、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/407895)
+
+前面介绍了jdk自带的logging、log4j1、log4j2、logback等实际的日志框架
+
+对于开发者而言，每种日志都有不同的写法。如果我们以实际的日志框架来进行编写，代码就限制死了，之后就很难再更换日志系统，很难做到无缝切换。
 
 java web开发就经常提到一项原则：面向接口编程，而不是面向实现编程
 
@@ -39,13 +44,23 @@ java web开发就经常提到一项原则：面向接口编程，而不是面向
 
 ##2.2 使用原理
 
+LogFactory.getLog(JulJclTest.class)的源码如下：
+
+	public static Log getLog(Class clazz) throws LogConfigurationException {
+        return getFactory().getInstance(clazz);
+    }
+
 上述获取Log的过程大致分成2个阶段
 
 -	获取LogFactory的过程 (从字面上理解就是生产Log的工厂)
 -	根据LogFactory获取Log的过程
 
 commons-logging默认提供的LogFactory实现：LogFactoryImpl
-commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、SimpleLog
+commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、SimpleLog。
+
+来看下commons-logging包中的大概内容：
+
+![commons-logging包中的大致内容][3]
 
 下面来详细说明：
 
@@ -209,7 +224,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 ##4.2 使用案例
 
--	在类路径下加入log4j的配置文件
+-	在类路径下加入log4j的配置文件log4j.properties
 
 		log4j.rootLogger = trace, console
 		log4j.appender.console = org.apache.log4j.ConsoleAppender
@@ -260,7 +275,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 			
 		使用原生的log4j1的写法来生成，参见之前log4j原生的写法[log4j1原生的写法](http://my.oschina.net/pingpangkuangmo/blog/406618#OSC_h1_5)，我们知道上述过程会引发log4j1的配置文件的加载，之后就进入log4j1的世界了
 
-	-	2.2 输入日志
+	-	2.2 输出日志
 
 		测试案例中我们使用commons-logging输出的日志的形式如下（这里的logger是org.apache.commons.logging.impl.Log4JLogger类型）：
 
@@ -306,7 +321,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 ##5.2 使用案例
 
--	编写log4j2的配置文件，简单如下：
+-	编写log4j2的配置文件log4j2.xml，简单如下：
 
 		<?xml version="1.0" encoding="UTF-8"?>
 		<Configuration status="WARN">
@@ -324,19 +339,19 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 -	使用案例如下：
 
-	private static Log logger=LogFactory.getLog(Log4j2JclTest.class);
-	
-	public static void main(String[] args){
-		if(logger.isTraceEnabled()){
-			logger.trace("commons-logging-log4j trace message");
+		private static Log logger=LogFactory.getLog(Log4j2JclTest.class);
+		
+		public static void main(String[] args){
+			if(logger.isTraceEnabled()){
+				logger.trace("commons-logging-log4j trace message");
+			}
+			if(logger.isDebugEnabled()){
+				logger.debug("commons-logging-log4j debug message");
+			}
+			if(logger.isInfoEnabled()){
+				logger.info("commons-logging-log4j info message");
+			}
 		}
-		if(logger.isDebugEnabled()){
-			logger.debug("commons-logging-log4j debug message");
-		}
-		if(logger.isInfoEnabled()){
-			logger.info("commons-logging-log4j info message");
-		}
-	}
 
 仍然是使用commons-logging的Log接口和LogFactory来进行编写，看不到log4j2的影子。但是这时候含有上述几个jar包，log4j2就与commons-logging集成了起来。
 
@@ -412,7 +427,7 @@ commons-logging默认提供的LogFactory实现：Jdk14Logger、Log4JLogger、Sim
 
 ##6.1 需要的jar包
 
--	jcl-over-slf4j (完全替代了commons-logging，下面详细说明)
+-	jcl-over-slf4j (替代了commons-logging，下面详细说明)
 -	slf4j-api
 -	logback-core
 -	logback-classic
@@ -498,6 +513,10 @@ logback本身的使用其实就和slf4j绑定了起来，现在要想指定commo
 
 	这就是jcl-over-slf4j的大致内容
 
+	这里可以与commons-logging原生包中的内容进行下对比。原生包中的内容如下：
+
+	![commons-logging包中的大致内容][3]
+
 -	2 获取获取LogFactory的过程
 
 	jcl-over-slf4j包中的LogFactory和commons-logging中原生的LogFactory不一样，jcl-over-slf4j中的LogFactory直接限制死，是SLF4JLogFactory，源码如下：
@@ -521,7 +540,9 @@ logback本身的使用其实就和slf4j绑定了起来，现在要想指定commo
 
 	可以看到其实是用slf4j的LoggerFactory先创建一个slf4j的Logger实例(这其实就是单独使用logback的使用方式，见[logback原生案例](http://my.oschina.net/pingpangkuangmo/blog/406618#OSC_h1_18))。
 
-	然后再将这个Logger实例封装成common-logging定义的Log接口实现，即SLF4JLog或者SLF4JLocationAwareLog实例，所以我们使用的SLF4JLog都是委托给slf4j创建的Logger实例（slf4j的这个实例又是选择logbakc后产生的，即slf4j产生的Logger实例最终还是委托给logback中的Logger的）
+	然后再将这个Logger实例封装成common-logging定义的Log接口实现，即SLF4JLog或者SLF4JLocationAwareLog实例。
+
+	所以我们使用的commons-logging的Log接口实例都是委托给slf4j创建的Logger实例（slf4j的这个实例又是选择logbakc后产生的，即slf4j产生的Logger实例最终还是委托给logback中的Logger的）
 
 #7 未完待续
 
@@ -529,3 +550,4 @@ logback本身的使用其实就和slf4j绑定了起来，现在要想指定commo
 
 [1]: http://static.oschina.net/uploads/space/2015/0428/074310_8b6K_2287728.png
 [2]: http://static.oschina.net/uploads/space/2015/0428/182614_Uqh8_2287728.png
+[3]: http://static.oschina.net/uploads/space/2015/0429/060037_MNFp_2287728.png
