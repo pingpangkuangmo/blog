@@ -1,7 +1,7 @@
 #1 系列目录
 
 -	[jdk-logging、log4j、logback日志介绍及原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
--	[commons-logging与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
+-	[commons-logging与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/407895)
 -	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
 
 #2 slf4j
@@ -454,17 +454,36 @@ maven依赖分别为：
 ![log4j与slf4j的集成][5]
 
 -	的确是有org/slf4j/impl/StaticLoggerBinder.class类
--	该StaticLoggerBinder返回的ILoggerFactory类型将会是Log4jLoggerFactory
--	Log4jLogger就是实现了slf4j定义的Logger接口	
+-	该StaticLoggerBinder返回的ILoggerFactory类型将会是LoggerContext(logback的对象)
+-	logback自己定义的ch.qos.logback.classic.Logger类就是实现了slf4j定义的Logger接口
 
-log4j与slf4j的集成
+-	1 获取对应的ILoggerFactory
+
+	-	1.1 第一个过程：slf4j寻找绑定类StaticLoggerBinder
+
+		使用ClassLoader来加载 "org/slf4j/impl/StaticLoggerBinder.class"这样的类的url，然后就找到了logback-classic包中的StaticLoggerBinder
+		
+	-	1.2 第二个过程：创建出StaticLoggerBinder实例，并创建出ILoggerFactory
+
+		logback-classic包中的StaticLoggerBinder返回的ILoggerFactory是LoggerContext(logback的对象)
+
+		创建出单例后，同时会引发logback的初始化，这时候logback就要去寻找一系列的配置文件，尝试加载并解析。
+
+-	2 根据ILoggerFactory获取Logger的过程
+
+	来看下LoggerContext(logback的对象)是如何返回一个slf4j定义的Logger接口的实例的，源码如下：
+
+	该LoggerContext(logback的对象)返回的ch.qos.logback.classic.Logger就是slf4j的Logger实现类。
+
+#7 未完待续
+
+本篇文章讲解了slf4j与jdk-logging、log4j1、log4j2、logback的集成原理，下一篇也是最后一篇来总结下
+
+-	各个jar包的作用
+-	实现已有的日志框架无缝切换到别的日志框架（如已使用log4j进行日志记录的代码最终转到logback来输出）
+-	冲突说明
+
 [1]: http://static.oschina.net/uploads/space/2015/0425/103113_ofMj_2287728.png
-
-logback与slf4j的集成
 [2]: http://static.oschina.net/uploads/space/2015/0425/104224_tX0x_2287728.png
-
-jul-slf4j的集成
 [4]: http://static.oschina.net/uploads/space/2015/0428/193549_XRSY_2287728.png
-
-log4j2与slf4j集成
 [5]: http://static.oschina.net/uploads/space/2015/0429/071640_N1tu_2287728.png
