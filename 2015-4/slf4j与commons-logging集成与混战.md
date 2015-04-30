@@ -2,8 +2,8 @@
 
 -	[jdk-logging、log4j、logback日志介绍及原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
 -	[commons-logging与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/407895)
--	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
--	[slf4j、commons-logging与各种日志框架的总结](http://my.oschina.net/pingpangkuangmo/blog/406618)
+-	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/408382)
+-	[slf4j、commons-logging与各种日志框架的大总结](http://my.oschina.net/pingpangkuangmo/blog/406618)
 
 #2各种jar包总结
 
@@ -25,10 +25,11 @@
 
 	-	commons-logging:commons-logging的原生全部内容
 	-	log4j-jcl:commons-logging到log4j2的桥梁
+	-	jcl-over-slf4j：commons-logging到slf4j的桥梁
 
 -	slf4j转向某个实际的日志框架:
 
-	场景介绍：如 使用slf4j的API进行编程，想使用log4j1来进行实际的日志输出，这就是slf4j-log4j12干的事。
+	场景介绍：如 使用slf4j的API进行编程，想底层使用log4j1来进行实际的日志输出，这就是slf4j-log4j12干的事。
 
 	-	slf4j-jdk14：slf4j到jdk-logging的桥梁
 	-	slf4j-log4j12：slf4j到log4j1的桥梁
@@ -173,9 +174,9 @@
 
 ![log4j转slf4j][1]
 
-我们可以看到，这里面其实是简化版的log4j。去掉log4j1的原生jar包，换成该简化版的jar包（可以实现无缝迁移）。
+我们可以看到，这里面其实是简化更改版的log4j。去掉log4j1的原生jar包，换成该简化更改版的jar包（可以实现无缝迁移）。
 
-但是简化版中的Logger和原生版中的实现就不同了，简化版中的Logger实现如下（继承了Category）：
+但是简化更改版中的Logger和原生版中的实现就不同了，简化版中的Logger实现如下（继承了Category）：
 
 	public class Category {
 	    private String name;
@@ -233,7 +234,7 @@
 
 我们看到只有一个类：SLF4JBridgeHandler
 
-它集成了jdk-logging中定义的java.util.logging.Handler，Handler是jdk-logging处理日志过程中的一个处理器（具体我也没仔细研究过），在使用之前，必须要提前注册这个处理器，即上述的SLF4JBridgeHandler.install()操作，install后我们就可以通过这个handler实现日志的切换工作，如下：
+它继承了jdk-logging中定义的java.util.logging.Handler，Handler是jdk-logging处理日志过程中的一个处理器（具体我也没仔细研究过），在使用之前，必须要提前注册这个处理器，即上述的SLF4JBridgeHandler.install()操作，install后我们就可以通过这个handler实现日志的切换工作，如下：
 
 	protected Logger getSLF4JLogger(LogRecord record) {
         String name = record.getLoggerName();
@@ -272,9 +273,62 @@
 -	第一步：去掉commons-logging jar包（其实去不去都无所谓）
 -	第二步：加入以下jar包：
 
-	-	jcl-over-slf4j
+	-	jcl-over-slf4j（实现commons-logging切换到slf4j）
+	-	slf4j-api
+	-	logback-core
+	-	logback-classic
+
+-	第三步：在类路径下加入logback的配置文件
+
+###4.3.2 切换原理
+
+这个原理之前都已经说过了，可以看下[commons-logging与logback的集成](http://my.oschina.net/pingpangkuangmo/blog/407895#OSC_h1_17)
+
+就是commons-logging通过jcl-over-slf4j 来选择slf4j作为底层的日志输出对象，而slf4j又选择logback来作为底层的日志输出对象。
+
+##4.4 常用的日志场景切换解释
+
+上面把日志的切换原理说清楚了，下面就针对具体的例子来进行应用
+
+先来看下slf4j官方的一张图：
+
+![日志系统之间的切换][3]
+
+下面分别详细说明这三个案例
+
+###4.4.1 左上图
+
+-	现状：
+
+	目前的应用程序中已经使用了如下混杂方式的API来进行日志的编程：
+
+	-	commons-logging
+	-	log4j1
+	-	jdk-logging
+	
+	现在想统一将日志的输出交给logback
+
+-	解决办法：
+
+	-	第一步：全部先切换到slf4j
+	
+		-	使用jcl-over-slf4j,将commons-logging的底层日志输出切换到slf4j
+		-	使用log4j-over-slf4j,将log4j1的日志输出切换到slf4j
+		-	使用jul-to-slf4j，将jul的日志输出切换到slf4j
+
+	-	第二步：使slf4j选择logback来作为底层日志输出
+
+	加入以下jar包：
+
+	-	slf4j-api
+
+###4.4.2
+
+###4.4.3
+
 #冲突说明
 
 
 [1]: http://static.oschina.net/uploads/space/2015/0429/202452_8hEO_2287728.png
 [2]: http://static.oschina.net/uploads/space/2015/0429/205834_VT4Z_2287728.png
+[3]: http://static.oschina.net/uploads/space/2015/0430/074446_6Vgr_2287728.png

@@ -2,7 +2,7 @@
 
 -	[jdk-logging、log4j、logback日志介绍及原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
 -	[commons-logging与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/407895)
--	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
+-	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/408382)
 
 #2 slf4j
 
@@ -92,6 +92,11 @@ LoggerFactory.getLogger(Log4jSlf4JTest.class)的源码如下：
 
 	<dependency>
 		<groupId>org.slf4j</groupId>
+		<artifactId>slf4j-api</artifactId>
+		<version>1.7.12</version>
+	</dependency>
+	<dependency>
+		<groupId>org.slf4j</groupId>
 		<artifactId>slf4j-jdk14</artifactId>
 		<version>1.7.12</version>
 	</dependency>
@@ -131,7 +136,7 @@ LoggerFactory.getLogger(Log4jSlf4JTest.class)的源码如下：
 -	该StaticLoggerBinder返回的ILoggerFactory类型将会是JDK14LoggerFactory
 -	JDK14LoggerAdapter就是实现了slf4j定义的Logger接口
 
-下面梳理下真个流程：
+下面梳理下整个流程：
 
 -	1 获取ILoggerFactory的过程
 
@@ -207,10 +212,10 @@ maven依赖分别为：
 				logger.debug("slf4j-log4j debug message");
 			}
 			if(logger.isInfoEnabled()){
-				logger.debug("slf4j-log4j info message");
+				logger.info("slf4j-log4j info message");
 			}
 			if(logger.isTraceEnabled()){
-				logger.debug("slf4j-log4j trace message");
+				logger.trace("slf4j-log4j trace message");
 			}
 		}
 
@@ -345,7 +350,7 @@ maven依赖分别为：
 ![log4j与slf4j的集成][5]
 
 -	的确是有org/slf4j/impl/StaticLoggerBinder.class类
--	该StaticLoggerBinder返回的ILoggerFactory类型将会是Log4jLoggerFactory
+-	该StaticLoggerBinder返回的ILoggerFactory类型将会是Log4jLoggerFactory(这里的Log4jLoggerFactory与上述log4j1集成时的Log4jLoggerFactory是不一样的)
 -	Log4jLogger就是实现了slf4j定义的Logger接口	
 
 来看下具体过程：
@@ -440,10 +445,10 @@ maven依赖分别为：
 				logger.debug("slf4j-logback debug message");
 			}
 			if(logger.isInfoEnabled()){
-				logger.debug("slf4j-logback info message");
+				logger.info("slf4j-logback info message");
 			}
 			if(logger.isTraceEnabled()){
-				logger.debug("slf4j-logback trace message");
+				logger.trace("slf4j-logback trace message");
 			}
 		}
 
@@ -471,17 +476,18 @@ maven依赖分别为：
 
 -	2 根据ILoggerFactory获取Logger的过程
 
-	来看下LoggerContext(logback的对象)是如何返回一个slf4j定义的Logger接口的实例的，源码如下：
+	来看下LoggerContext(logback的对象)是如何返回一个slf4j定义的Logger接口的实例的：
 
-	该LoggerContext(logback的对象)返回的ch.qos.logback.classic.Logger就是slf4j的Logger实现类。
+	该LoggerContext(logback的对象)返回的ch.qos.logback.classic.Logger(logback的原生Logger对象)就是slf4j的Logger实现类。
 
 #7 未完待续
 
 本篇文章讲解了slf4j与jdk-logging、log4j1、log4j2、logback的集成原理，下一篇也是最后一篇来总结下
 
--	各个jar包的作用
+-	各种jar包的总结
+-	commons-logging、slf4j与其他日志框架的集成总结
 -	实现已有的日志框架无缝切换到别的日志框架（如已使用log4j进行日志记录的代码最终转到logback来输出）
--	冲突说明
+-	jar包冲突说明
 
 [1]: http://static.oschina.net/uploads/space/2015/0425/103113_ofMj_2287728.png
 [2]: http://static.oschina.net/uploads/space/2015/0425/104224_tX0x_2287728.png
