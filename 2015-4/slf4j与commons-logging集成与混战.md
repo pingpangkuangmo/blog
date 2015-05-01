@@ -29,7 +29,7 @@
 
 -	slf4j转向某个实际的日志框架:
 
-	场景介绍：如 使用slf4j的API进行编程，想底层使用log4j1来进行实际的日志输出，这就是slf4j-log4j12干的事。
+	场景介绍：如 使用slf4j的API进行编程，底层想使用log4j1来进行实际的日志输出，这就是slf4j-log4j12干的事。
 
 	-	slf4j-jdk14：slf4j到jdk-logging的桥梁
 	-	slf4j-log4j12：slf4j到log4j1的桥梁
@@ -51,20 +51,20 @@
 
 ##3.1 commons-logging与其他日志框架集成
 
--	commons-logging与jdk-logging集成：
+-	1 commons-logging与jdk-logging集成：
 
 	需要的jar包：
 	
 	-	commons-logging
 
--	commons-logging与log4j1集成：
+-	2 commons-logging与log4j1集成：
 
 	需要的jar包：
 	
 	-	commons-logging
 	-	log4j
 
--	commons-logging与log4j2集成：
+-	3 commons-logging与log4j2集成：
 
 	需要的jar包：
 	
@@ -73,15 +73,15 @@
 	-	log4j-core
 	-	log4j-jcl(集成包)
 
--	commons-logging与logback集成：
+-	4 commons-logging与logback集成：
 
 	需要的jar包：
 	
 	-	logback-core
 	-	logback-classic
-	-	slf4j-api、jcl-over-slf4j(2个集成包)
+	-	slf4j-api、jcl-over-slf4j(2个集成包,可以不再需要commons-logging)
 
--	commons-logging与slf4j集成：
+-	5 commons-logging与slf4j集成：
 
 	需要的jar包：
 	
@@ -166,6 +166,7 @@
 	-	logback-core
 	-	logback-classic
 -	第三步：在类路径下加入logback的配置文件
+
 原理是什么呢？
 
 ###4.1.2 切换原理
@@ -310,10 +311,10 @@
 
 -	解决办法：
 
-	-	第一步：全部先切换到slf4j
-	
-		-	使用jcl-over-slf4j,将commons-logging的底层日志输出切换到slf4j
-		-	使用log4j-over-slf4j,将log4j1的日志输出切换到slf4j
+	-	第一步：将上述日志系统全部无缝先切换到slf4j
+
+		-	去掉commons-logging（其实去不去都可以），使用jcl-over-slf4j将commons-logging的底层日志输出切换到slf4j
+		-	去掉log4j1(必须去掉),使用log4j-over-slf4j,将log4j1的日志输出切换到slf4j
 		-	使用jul-to-slf4j，将jul的日志输出切换到slf4j
 
 	-	第二步：使slf4j选择logback来作为底层日志输出
@@ -321,14 +322,100 @@
 	加入以下jar包：
 
 	-	slf4j-api
+	-	logback-core
+	-	logback-classic
 
-###4.4.2
+下面的2张图和上面就很类似
+
+###4.4.2 右上图
+
+-	现状：
+
+	目前的应用程序中已经使用了如下混杂方式的API来进行日志的编程：
+
+	-	commons-logging
+	-	jdk-logging
+
+	现在想统一将日志的输出交给log4j1
+
+-	解决办法：
+
+	-	第一步：将上述日志系统全部无缝先切换到slf4j
+
+		-	去掉commons-logging（其实去不去都可以），使用jcl-over-slf4j将commons-logging的底层日志输出切换到slf4j
+		-	使用jul-to-slf4j，将jul的日志输出切换到slf4j
+
+	-	第二步：使slf4j选择log4j1来作为底层日志输出
+
+	加入以下jar包：
+
+	-	slf4j-api
+	-	log4j
+	-	slf4j-log4j12(集成包)
 
 ###4.4.3
 
-#冲突说明
+-	现状：
 
+	目前的应用程序中已经使用了如下混杂方式的API来进行日志的编程：
+
+	-	commons-logging
+	-	log4j
+
+	现在想统一将日志的输出交给jdk-logging
+
+-	解决办法：
+
+	-	第一步：将上述日志系统全部无缝先切换到slf4j
+
+		-	去掉commons-logging（其实去不去都可以），使用jcl-over-slf4j将commons-logging的底层日志输出切换到slf4j
+		-	去掉log4j1(必须去掉),使用log4j-over-slf4j,将log4j1的日志输出切换到slf4j
+
+	-	第二步：使slf4j选择jdk-logging来作为底层日志输出
+
+	加入以下jar包：
+
+	-	slf4j-api
+	-	slf4j-jdk14(集成包)
+
+#5 冲突说明
+
+仍然是这里的内容[slf4j官网的冲突说明](http://www.slf4j.org/legacy.html)
+
+其实明白上面介绍的各jar包的作用，就很容易理解
+
+##5.1 jcl-over-slf4j 与 slf4j-jcl 冲突
+
+-	jcl-over-slf4j： commons-logging切换到slf4j
+
+-	slf4j-jcl : slf4j切换到commons-logging
+
+如果这两者共存的话，必然造成相互推诿，造成内存溢出
+
+##5.2 log4j-over-slf4j 与 slf4j-log4j12 冲突
+
+-	log4j-over-slf4j ： log4j1切换到slf4j
+-	slf4j-log4j12 : slf4j切换到log4j1
+
+如果这两者共存的话，必然造成相互推诿，造成内存溢出。但是log4j-over-slf4内部做了一个判断，可以防止造成内存溢出：
+
+即判断slf4j-log4j12 jar包中的org.slf4j.impl.Log4jLoggerFactory是否存在，如果存在则表示冲突了，抛出异常提示用户要去掉对应的jar包，代码如下，在slf4j-log4j12 jar包的org.apache.log4j.Log4jLoggerFactory中：
+
+![slf4j-log4j12防止冲突的策略][4]
+
+##5.3 jul-to-slf4j 与 slf4j-jdk14 冲突
+
+-	jul-to-slf4j ： jdk-logging切换到slf4j
+-	slf4j-jdk14 : slf4j切换到jdk-logging
+
+如果这两者共存的话，必然造成相互推诿，造成内存溢出
+
+
+#6 结束语
+
+至此，这个日志系列就算终于完成了。它注重于日志系统之间的交互与集成，所以想深入研究单个日志系统的架构的话，就需要各位自行去深入研究了。
 
 [1]: http://static.oschina.net/uploads/space/2015/0429/202452_8hEO_2287728.png
 [2]: http://static.oschina.net/uploads/space/2015/0429/205834_VT4Z_2287728.png
 [3]: http://static.oschina.net/uploads/space/2015/0430/074446_6Vgr_2287728.png
+[4]: http://static.oschina.net/uploads/space/2015/0501/104358_v2dF_2287728.png
