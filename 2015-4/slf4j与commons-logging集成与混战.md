@@ -3,7 +3,7 @@
 -	[jdk-logging、log4j、logback日志介绍及原理](http://my.oschina.net/pingpangkuangmo/blog/406618)
 -	[commons-logging与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/407895)
 -	[slf4j与jdk-logging、log4j1、log4j2、logback的集成原理](http://my.oschina.net/pingpangkuangmo/blog/408382)
--	[slf4j、commons-logging与各种日志框架的大总结](http://my.oschina.net/pingpangkuangmo/blog/406618)
+-	[slf4j、jcl、jul、log4j1、log4j2、logback大总结](http://my.oschina.net/pingpangkuangmo/blog/410224)
 
 #2各种jar包总结
 
@@ -13,8 +13,8 @@
 
 -	log4j2:
 
-	-	log4j-api:log4j定义的API
-	-	log4j-core:log4j上述API的实现
+	-	log4j-api:log4j2定义的API
+	-	log4j-core:log4j2上述API的实现
 
 -	logback:
 
@@ -221,11 +221,11 @@
 
 -	第二步：在类路径下加入logback的配置文件
 
-同时代码中加入如下代码：
+-	第三步：在代码中加入如下代码：
 
-	static{
-		SLF4JBridgeHandler.install();
-	}
+		static{
+			SLF4JBridgeHandler.install();
+		}
 
 ###4.2.2 切换原理
 
@@ -353,7 +353,7 @@
 	-	log4j
 	-	slf4j-log4j12(集成包)
 
-###4.4.3
+###4.4.3 左下图
 
 -	现状：
 
@@ -390,14 +390,14 @@
 
 -	slf4j-jcl : slf4j切换到commons-logging
 
-如果这两者共存的话，必然造成相互推诿，造成内存溢出
+如果这两者共存的话，必然造成相互委托，造成内存溢出
 
 ##5.2 log4j-over-slf4j 与 slf4j-log4j12 冲突
 
 -	log4j-over-slf4j ： log4j1切换到slf4j
 -	slf4j-log4j12 : slf4j切换到log4j1
 
-如果这两者共存的话，必然造成相互推诿，造成内存溢出。但是log4j-over-slf4内部做了一个判断，可以防止造成内存溢出：
+如果这两者共存的话，必然造成相互委托，造成内存溢出。但是log4j-over-slf4内部做了一个判断，可以防止造成内存溢出：
 
 即判断slf4j-log4j12 jar包中的org.slf4j.impl.Log4jLoggerFactory是否存在，如果存在则表示冲突了，抛出异常提示用户要去掉对应的jar包，代码如下，在slf4j-log4j12 jar包的org.apache.log4j.Log4jLoggerFactory中：
 
@@ -408,7 +408,7 @@
 -	jul-to-slf4j ： jdk-logging切换到slf4j
 -	slf4j-jdk14 : slf4j切换到jdk-logging
 
-如果这两者共存的话，必然造成相互推诿，造成内存溢出
+如果这两者共存的话，必然造成相互委托，造成内存溢出
 
 
 #6 结束语
