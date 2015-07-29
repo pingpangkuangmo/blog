@@ -61,10 +61,91 @@
 	sessionId=94249128002584594
 	password=[B@4de3aaf6
 
-下面就通过源码来详细说明这个建立连接的过程。、
+下面就通过源码来详细说明这个建立连接的过程。
 
 #3 客户端的建立连接的过程
 
+##3.1 大体连接过程概述
+
 首先与ZooKeeper服务器建立连接，有两层连接要建立。
 
+-	客户端与服务器端的TCP连接
+-	在TCP连接的基础上建立session关联
 
+建立TCP连接之后，客户端发送ConnectRequest请求，申请建立session关联，此时服务器端会为该客户端分配sessionId和密码，同时开启对该session是否超时的检测。
+
+当在sessionTimeout时间内，即还未超时，此时TCP连接断开，服务器端仍然认为该sessionId处于存活状态。此时，客户端会选择下一个ZooKeeper服务器地址进行TCP连接建立，TCP连接建立完成后，拿着之前的sessionId和密码发送ConnectRequest请求，如果还未到该sessionId的超时时间，则表示自动重连成功，对客户端用户是透明的，一切都在背后默默执行，ZooKeeper对象是有效的。
+
+如果重新建立TCP连接后，已经达到该sessionId的超时时间了（服务器端就会清理与该sessionId相关的数据），则会报session过期异常，此时ZooKeeper对象就是无效的了，必须要重新new一个新的ZooKeeper对象，分配新的sessionId了。
+
+
+##3.2 ZooKeeper对象
+
+它是面向用户的，提供一些操作API。
+
+它又两个重要的属性：
+
+-	ClientCnxn cnxn：负责所有的ZooKeeper节点操作的执行
+-	ZKWatchManager watchManager：负责维护某个path上注册的Watcher
+
+如创建某个node操作（同步方式）：
+
+ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper对象再对返回结果进行处理。
+
+![ZooKeeper同步方式创建节点操作](https://static.oschina.net/uploads/img/201507/29192425_UnoE.png "ZooKeeper同步方式创建节点操作")
+
+下面来看下异步回调的方式创建node：
+
+![ZooKeeper异步方式创建节点操作](https://static.oschina.net/uploads/img/201507/29193916_3lkA.png "ZooKeeper异步方式创建节点操作")
+
+对于两者的实现细节后文再详细说明。
+
+至此简单了解了，ZooKeeper对象主要封装用户的请求以及处理响应等操作。用户请求的执行全部交给ClientCnxn来执行，那我们就详细看下ClientCnxn的来源及大体内容。
+
+先看看ClientCnxn是怎么来的：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201507/29195113_Gcjr.png "在这里输入图片标题")
+
+-	第一步：为ZKWatchManager watchManager设置一个默认的Watcher
+-	第二步：将连接字符串信息交给ConnectStringParser进行解析
+
+	连接字符串比如： "192.168.12.1:2181,192.168.12.2:2181,192.168.12.3:2181/root"
+
+	解析结果如下：
+
+	![ConnectStringParser解析结果](https://static.oschina.net/uploads/img/201507/29200845_MSRF.png "ConnectStringParser解析结果")
+
+	得到两个数据String chrootPath默认的跟路径和ArrayList<InetSocketAddress> serverAddresses即多个host和port信息。
+
+-	第三步：根据上述解析的host和port列表结果，创建一个HostProvider
+
+	有了ConnectStringParser的解析结果，为什么还需要一个HostProvider再来包装下呢？主要是将来留下扩展的余地
+
+	来看下HostProvider的详细接口介绍：
+
+	![HostProvider的详细接口介绍](https://static.oschina.net/uploads/img/201507/29204007_OfNi.png "HostProvider的详细接口介绍")
+
+	HostProvider主要负责不断的对外提供可用的ZooKeeper服务器地址，这些服务器地址可以是从一个url中加载得来或者其他途径得来。同时对于不同的ZooKeeper客户端，给出就近的ZooKeeper服务器地址等。
+
+	来看下默认的HostProvider实现StaticHostProvider：
+
+	![StaticHostProvider](https://static.oschina.net/uploads/img/201507/29205354_YYaY.png "StaticHostProvider")
+
+	有三个属性，一个就是服务器地址列表（经过如下方式随机打乱了）：
+
+		Collections.shuffle(this.serverAddresses)
+
+	另外两个属性用于标记，下面来具体看下，StaticHostProvider是如何实现不断的对外提供ZooKeeper服务器地址的：
+
+	![StaticHostProvider提供ZooKeeper服务器地址](https://static.oschina.net/uploads/img/201507/29210008_UvTp.png "StaticHostProvider提供ZooKeeper服务器地址")
+
+	代码也很简单，就是在打乱的服务器地址列表中，不断地遍历，到头之后，在从0开始。
+
+	上面的spinDelay是个什么情况呢？
+
+	正常情况下，currentIndex先加1，然后返回currentIndex+1的地址，当改地址连接成功后会执行onConnected方法，即lastIndex = currentIndex了。然而当返回的currentIndex+1的地址连接不成功，继续尝试下一个，仍不成功，仍继续下一个，就会遇到currentIndex=lastIndex的情况，此时即轮询了一遍，仍然没有一个地址能够连接上，此时的策略就是先暂停休息休息，然后再继续。
+
+	
+-	第四步：为创建ClientCnxn准备参数并创建ClientCnxn。
+
+	
