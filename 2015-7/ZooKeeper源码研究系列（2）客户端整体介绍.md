@@ -167,9 +167,9 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 	首先就是保存一些对象参数，此时的sessionId和sessionPasswd都还没有。然后就是两个timeout参数：connectTimeout和readTimeout。在ClientCnxn的发送和接收数据的线程中，会不断的检测连接超时和读取超时，一旦出现超时，就认为服务不稳定，需要更换服务器，就会从HostProvider中获取下一个服务器地址进行连接。
 
-	最后就是两个线程，一个事件线程，一个发送和接收socket数据的线程。
+	最后就是两个线程，一个事件线程即EventThread，一个发送和接收socket数据的线程即SendThread。
 
-	事件线程呢就是从一个事件队列中不断取出事件并进行处理：
+	事件线程EventThread呢就是从一个事件队列中不断取出事件并进行处理：
 
 	![EventThread的工作职责](https://static.oschina.net/uploads/img/201507/30081219_ZXVp.png "EventThread的工作职责")
 
@@ -184,6 +184,65 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 	![EventThread添加事件](https://static.oschina.net/uploads/img/201507/30082302_vHHZ.png "EventThread添加事件")
 
 	对外提供了三个方法来添加不同类型的事件，如SendThread线程就会调用这三个方法来添加事件。其中对于事件通知，会首先根据ZKWatchManager watchManager来获取关心该事件的所有Watcher，然后触发他们。
+
+	再来看看SendThread的工作内容：
+
+		sendThread = new SendThread(clientCnxnSocket);
+	把传递给ClientCnxn的clientCnxnSocket，再传递给SendThread，让它服务于SendThread。
+
+	在SendThread的run方法中，有一个while循环，不断的做着以下几件事：
+
+	-	任务1：不断检测clientCnxnSocket是否和服务器处于连接状态，如果是未连接状态，则从hostProvider中取出一个服务器地址，使用clientCnxnSocket进行连接。和服务器建立连接成功后，开始发送ConnectRequest请求，把该请求放到outgoingQueue请求队列中，等待被发送给服务器
+
+		![和服务器建立连接](https://static.oschina.net/uploads/img/201507/30194804_g1GU.png "和服务器建立连接")
+
+		![建立socket连接后发送ConnectRequest请求来初始化session](https://static.oschina.net/uploads/img/201507/30195637_A8le.png "建立socket连接后发送ConnectRequest请求来初始化session")
+
+		从上图可以看出，一旦socket连接建立完毕，就开始发送ConnectRequest请求来初始化session。
+	-	任务2：检测是否超时：当处于连接状态时，检测是否读超时，当处于未连接状态时，检测是否连接超时
+
+		![检测读超时或者socket连接超时](https://static.oschina.net/uploads/img/201507/30195926_gJB7.png "检测读超时或者socket连接超时")
+
+		一旦超时，则抛出SessionTimeoutException，然后看下是如何处理呢？
+
+		![异常处理](https://static.oschina.net/uploads/img/201507/30200251_dHc3.png "异常处理")
+
+		可以看到一旦发生超时异常或者其他异常，都会进行清理，并设置连接状态为未连接，然后发送Disconnected事件。至此又会进入任务1的流程
+	-	任务3：不断的发送ping通知，服务器端每接收到ping请求，就会从当前时间重新计算session过期时间，所以当客户端按照一定时间间隔不断的发送ping请求，就能保证客户端的session不会过期。发送时间间隔如下：
+
+		![发送Ping通知的机制](https://static.oschina.net/uploads/img/201507/30202107_8Rh6.png "发送Ping通知的机制")
+
+		clientCnxnSocket.getIdleSend()：是最后一次发送数据包的时间与当前时间的间隔，即readTimeout的时间已经过去一半多了，都没有发送数据包的话，则执行一次Ping发送。或者过去MAX_SEND_PING_INTERVAL（10s）都还没有发送数据包的话，则执行一次Ping发送。
+
+		![Ping发送的内容](https://static.oschina.net/uploads/img/201507/30202838_P3s1.png "Ping发送的内容")
+	
+		ping发送的内容只有请求头OpCode.ping的标示，其他都为空。发送ping请求，也是把该请求放到outgoingQueue发送队列中，等待被执行。
+
+	-	任务4：执行IO操作，即发送请求队列中的请求和读取服务器端的响应数据。
+
+		![发送请求队列中的请求](https://static.oschina.net/uploads/img/201507/30204315_uaaw.png "发送请求队列中的请求")
+
+		首先从outgoingQueue请求队列中取出第一个请求，然后进行序列化，然后使用socket进行发送。
+	
+		读取服务器端数据如下：
+
+		![读取服务器端响应](https://static.oschina.net/uploads/img/201507/30204611_Apld.png "读取服务器端响应")
+
+		分为两种：一种是读取针对ConnectRequest请求的响应，另一种就是其他响应，先暂时不说。
+
+		先来看看针对ConnectRequest请求的响应：
+
+		![读取ConnectResponse的内容](https://static.oschina.net/uploads/img/201507/30204946_yKYF.png "读取ConnectResponse的内容")
+
+		首先进行反序列化，得到ConnectResponse对象，我们就可以获取到服务器端给我们客户端分配的sessionId和passwd，以及协商后的sessionTimeOut时间。
+
+		![session获取成功后，重置参数](https://static.oschina.net/uploads/img/201507/30205409_XGGg.png "session获取成功后，重置参数")
+
+		首选要根据协商后的sessionTimeout时间，重新计算readTimeout和connectTimeout值。然后保留和记录sessionId和passwd。最后通过EventThread发送一个SyncConnected连接成功事件。至此，TCP连接和session初始化请求都完成了，客户端的ZooKeeper对象可以正常使用了。
+
+		至此，我们便了解客户端与服务器端建立连接的过程。
+
+		
 
 	
 
