@@ -119,7 +119,7 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 -	第三步：根据上述解析的host和port列表结果，创建一个HostProvider
 
-	有了ConnectStringParser的解析结果，为什么还需要一个HostProvider再来包装下呢？主要是将来留下扩展的余地
+	有了ConnectStringParser的解析结果，为什么还需要一个HostProvider再来包装下呢？主要是为将来留下扩展的余地
 
 	来看下HostProvider的详细接口介绍：
 
@@ -143,9 +143,48 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 	上面的spinDelay是个什么情况呢？
 
-	正常情况下，currentIndex先加1，然后返回currentIndex+1的地址，当改地址连接成功后会执行onConnected方法，即lastIndex = currentIndex了。然而当返回的currentIndex+1的地址连接不成功，继续尝试下一个，仍不成功，仍继续下一个，就会遇到currentIndex=lastIndex的情况，此时即轮询了一遍，仍然没有一个地址能够连接上，此时的策略就是先暂停休息休息，然后再继续。
+	正常情况下，currentIndex先加1，然后返回currentIndex+1的地址，当该地址连接成功后会执行onConnected方法，即lastIndex = currentIndex了。然而当返回的currentIndex+1的地址连接不成功，继续尝试下一个，仍不成功，仍继续下一个，就会遇到currentIndex=lastIndex的情况，此时即轮询了一遍，仍然没有一个地址能够连接上，此时的策略就是先暂停休息休息，然后再继续。
 
 	
 -	第四步：为创建ClientCnxn准备参数并创建ClientCnxn。
+
+	首先是通过getClientCnxnSocket()获取一个ClientCnxnSocket。来看下ClientCnxnSocket是主要做什么工作的：
+
+	>A ClientCnxnSocket does the lower level communication with a socket implementation.
+	This code has been moved out of ClientCnxn so that a Netty implementation can be provided as an alternative to the NIO socket code.
+
+	专门用于负责socket通信的，把一些公共部分抽象出来，其他的留给不同的实现者来实现。如可以选择默认的ClientCnxnSocketNIO，也可以使用netty等。
+
+	来看下getClientCnxnSocket()的获取ClientCnxnSocket的过程：
+
+	![getClientCnxnSocket过程](https://static.oschina.net/uploads/img/201507/30070323_wIkK.png "getClientCnxnSocket过程")
+
+	首先获取系统参数"zookeeper.clientCnxnSocket",如果没有的话，使用默认的ClientCnxnSocketNIO，所以我们可以通过指定该参数来替换默认的实现。
+
+	参数准备好了，ClientCnxn是如何来创建的呢？
+
+	![ClientCnxn的创建过程](https://static.oschina.net/uploads/img/201507/30070937_Arhf.png "ClientCnxn的创建过程")
+
+	首先就是保存一些对象参数，此时的sessionId和sessionPasswd都还没有。然后就是两个timeout参数：connectTimeout和readTimeout。在ClientCnxn的发送和接收数据的线程中，会不断的检测连接超时和读取超时，一旦出现超时，就认为服务不稳定，需要更换服务器，就会从HostProvider中获取下一个服务器地址进行连接。
+
+	最后就是两个线程，一个事件线程，一个发送和接收socket数据的线程。
+
+	事件线程呢就是从一个事件队列中不断取出事件并进行处理：
+
+	![EventThread的工作职责](https://static.oschina.net/uploads/img/201507/30081219_ZXVp.png "EventThread的工作职责")
+
+	看下具体的处理过程，主要分成两种情况，一种就是我们注册的watch事件，另一种就是处理异步回调函数：
+
+	![watch处理和异步回调](https://static.oschina.net/uploads/img/201507/30081813_fuFZ.png "watch处理和异步回调")
+
+	可以看到这里就是触发我们注册Watch的，还有触发上文提到的异步回调的情况的。
+
+	明白了EventThread是如何来处理事件的，需要知道这些事件是如何来的：
+
+	![EventThread添加事件](https://static.oschina.net/uploads/img/201507/30082302_vHHZ.png "EventThread添加事件")
+
+	对外提供了三个方法来添加不同类型的事件，如SendThread线程就会调用这三个方法来添加事件。其中对于事件通知，会首先根据ZKWatchManager watchManager来获取关心该事件的所有Watcher，然后触发他们。
+
+	
 
 	
