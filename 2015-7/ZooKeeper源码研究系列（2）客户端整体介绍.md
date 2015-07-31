@@ -49,8 +49,12 @@
 
 	该地址是可以填写多个的，以逗号分隔。如"127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183",那客户端连接的时候到底是使用哪一个呢？先随机打乱，然后轮询着用，后面再详细介绍。
 -	sessionTimeout
+	
+	最终会引出三个时间设置：和服务器端协商后的sessionTimeout、readTimeout、connectTimeout
 
-	客户端指定的session超时时间，即超过sessionTimeout时间后，客户端没有向服务器端发送任何请求（正常情况下客户端会每隔一段时间发送心跳请求，此时服务器端会从新计算客户端的超时时间点的），则服务器端认为session超时，清理数据。此时客户端的ZooKeeper对象就不再起作用了，需要再重新new一个新的对象了。
+	服务器端使用协商后的sessionTimeout：即超过该时间后，客户端没有向服务器端发送任何请求（正常情况下客户端会每隔一段时间发送心跳请求，此时服务器端会从新计算客户端的超时时间点的），则服务器端认为session超时，清理数据。此时客户端的ZooKeeper对象就不再起作用了，需要再重新new一个新的对象了。
+
+	客户端使用connectTimeout、readTimeout分别用于检测连接超时和读取超时，一旦超时，则该客户端认为该服务器不稳定，就会从新连接下一个服务器地址。
 -	Watcher
 
 	作为ZooKeeper对象一个默认的Watcher，用于接收一些事件通知。如和服务器连接成功的通知、断开连接的通知、Session过期的通知等。
@@ -76,7 +80,7 @@
 
 当在sessionTimeout时间内，即还未超时，此时TCP连接断开，服务器端仍然认为该sessionId处于存活状态。此时，客户端会选择下一个ZooKeeper服务器地址进行TCP连接建立，TCP连接建立完成后，拿着之前的sessionId和密码发送ConnectRequest请求，如果还未到该sessionId的超时时间，则表示自动重连成功，对客户端用户是透明的，一切都在背后默默执行，ZooKeeper对象是有效的。
 
-如果重新建立TCP连接后，已经达到该sessionId的超时时间了（服务器端就会清理与该sessionId相关的数据），则会报session过期异常，此时ZooKeeper对象就是无效的了，必须要重新new一个新的ZooKeeper对象，分配新的sessionId了。
+如果重新建立TCP连接后，已经达到该sessionId的超时时间了（服务器端就会清理与该sessionId相关的数据），则返回给客户端的sessionTimeout时间为0，sessionid为0，密码为空字节数组。客户端接收到该数据后，会判断协商后的sessionTimeout时间是否小于等于0，如果小于等于0，则使用eventThread线程先发出一个KeeperState.Expired事件，通知相应的Watcher，然后结束EventThread线程的循环，开始走向结束。此时ZooKeeper对象就是无效的了，必须要重新new一个新的ZooKeeper对象，分配新的sessionId了。
 
 
 ##3.2 ZooKeeper对象
@@ -98,7 +102,7 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 ![ZooKeeper异步方式创建节点操作](https://static.oschina.net/uploads/img/201507/29193916_3lkA.png "ZooKeeper异步方式创建节点操作")
 
-对于两者的实现细节后文再详细说明。
+同步方式提交一个请求后，开始循环判断该请求包的状态是否结束，即处于阻塞状态，一旦结束则继续往下走下去，返回结果。异步方式则提交一个请求后，直接返回，对结果的处理逻辑包含在回调函数中。一旦该对该请求包响应完毕，则取出回调函数执行相应的回调方法。
 
 至此简单了解了，ZooKeeper对象主要封装用户的请求以及处理响应等操作。用户请求的执行全部交给ClientCnxn来执行，那我们就详细看下ClientCnxn的来源及大体内容。
 
@@ -192,13 +196,14 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 	在SendThread的run方法中，有一个while循环，不断的做着以下几件事：
 
-	-	任务1：不断检测clientCnxnSocket是否和服务器处于连接状态，如果是未连接状态，则从hostProvider中取出一个服务器地址，使用clientCnxnSocket进行连接。和服务器建立连接成功后，开始发送ConnectRequest请求，把该请求放到outgoingQueue请求队列中，等待被发送给服务器
+	-	任务1：不断检测clientCnxnSocket是否和服务器处于连接状态，如果是未连接状态，则从hostProvider中取出一个服务器地址，使用clientCnxnSocket进行连接。
 
 		![和服务器建立连接](https://static.oschina.net/uploads/img/201507/30194804_g1GU.png "和服务器建立连接")
 
+		和服务器建立连接成功后，开始发送ConnectRequest请求，把该请求放到outgoingQueue请求队列中，等待被发送给服务器
+
 		![建立socket连接后发送ConnectRequest请求来初始化session](https://static.oschina.net/uploads/img/201507/30195637_A8le.png "建立socket连接后发送ConnectRequest请求来初始化session")
 
-		从上图可以看出，一旦socket连接建立完毕，就开始发送ConnectRequest请求来初始化session。
 	-	任务2：检测是否超时：当处于连接状态时，检测是否读超时，当处于未连接状态时，检测是否连接超时
 
 		![检测读超时或者socket连接超时](https://static.oschina.net/uploads/img/201507/30195926_gJB7.png "检测读超时或者socket连接超时")
@@ -212,7 +217,7 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 		![发送Ping通知的机制](https://static.oschina.net/uploads/img/201507/30202107_8Rh6.png "发送Ping通知的机制")
 
-		clientCnxnSocket.getIdleSend()：是最后一次发送数据包的时间与当前时间的间隔，即readTimeout的时间已经过去一半多了，都没有发送数据包的话，则执行一次Ping发送。或者过去MAX_SEND_PING_INTERVAL（10s）都还没有发送数据包的话，则执行一次Ping发送。
+		clientCnxnSocket.getIdleSend()：是最后一次发送数据包的时间与当前时间的间隔。当readTimeout的时间已经过去一半多了，都没有发送数据包的话，则执行一次Ping发送。或者过去MAX_SEND_PING_INTERVAL（10s）都还没有发送数据包的话，则执行一次Ping发送。
 
 		![Ping发送的内容](https://static.oschina.net/uploads/img/201507/30202838_P3s1.png "Ping发送的内容")
 	
@@ -242,7 +247,28 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 		至此，我们便了解客户端与服务器端建立连接的过程。
 
-		
+#4 服务器端处理连接的过程
+
+服务器端情况分很多种，先暂时说最简单的单机版。同时也不再给出服务器端的启动过程（后面的文章再来详细说明）。
+
+首先介绍下服务器端的大体概况：
+
+-	首先是服务器端的配置文件，有tickTime、minSessionTimeout、maxSessionTimeout相关属性。默认情况下，tickTime是3000ms，minSessionTimeout是2倍的tickTime，maxSessionTimeout是20倍的tickTime。
+-	服务器端默认采用NIOServerCnxnFactory来负责socket的处理。每来一个客户端socket请求，为该客户端创建一个NIOServerCnxn。之后与该客户端的交互，就交给了NIOServerCnxn来执行。对于客户端的ConnectRequest请求，处理如下：
+
+	首先反序列化出ConnectRequest
+
+	![反序列化ConnectRequest](https://static.oschina.net/uploads/img/201507/31082153_20qo.png "反序列化ConnectRequest")
+
+	然后开始协商sessionTimeout时间
+
+	![输入图片说明](https://static.oschina.net/uploads/img/201507/31082402_uZ5C.png "在这里输入图片标题")
+
+	即判断用户传递过来的sessionTimeout时间是否在minSessionTimeout、maxSessionTimeout之间。协商完成之后，根据用户传递过来的sessionId是否是0进行不同的处理。客户端第一次请求，sessionId为0。当客户端已经连接过一个服务器地址，分配了sessionId，然后如果发生超时等异常，客户端会去拿着已经分配的sessionId去连接下一个服务器地址，此时的sessionId不为0。
+
+	sessionId为0，则代表着要创建session。sessionId不为0，则需要对该sessionId进行合法性检查，以及是否已经过期了的检查。
+
+	我们先来看看sessionId为0的情况：
 
 	
 
