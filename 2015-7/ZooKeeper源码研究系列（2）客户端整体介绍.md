@@ -254,7 +254,7 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 首先介绍下服务器端的大体概况：
 
 -	首先是服务器端的配置文件，有tickTime、minSessionTimeout、maxSessionTimeout相关属性。默认情况下，tickTime是3000ms，minSessionTimeout是2倍的tickTime，maxSessionTimeout是20倍的tickTime。
--	服务器端默认采用NIOServerCnxnFactory来负责socket的处理。每来一个客户端socket请求，为该客户端创建一个NIOServerCnxn。之后与该客户端的交互，就交给了NIOServerCnxn来执行。对于客户端的ConnectRequest请求，处理如下：
+-	服务器端默认采用NIOServerCnxnFactory来负责socket的处理。每来一个客户端socket请求，为该客户端创建一个NIOServerCnxn。之后与该客户端的交互，就交给了NIOServerCnxn来处理。对于客户端的ConnectRequest请求，处理如下：
 
 	首先反序列化出ConnectRequest
 
@@ -270,6 +270,101 @@ ZooKeeper对象负责创建出Request，并交给ClientCnxn来执行，ZooKeeper
 
 	我们先来看看sessionId为0的情况：
 
-	
+	![创建session](https://static.oschina.net/uploads/img/201508/01065436_4nHs.png "创建session")
+
+	大体上分三大步：1、使用sessionTracker根据sessionTimeout时间创建一个新的session 2、根据sessionId创建出密码
+	3、提交这个创建session的请求到请求处理器链，最终将sessionId和密码返回给客户端
+
+下面来分别详细的说明这三个过程：
+
+##4.1 使用sessionTracker创建session
+
+SessionTracker是用来创建删除session，执行session的过期检查的。
+
+直接看下默认使用的SessionTrackerImpl：
+
+![SessionTrackerImpl的整体内容](https://static.oschina.net/uploads/img/201508/01074505_7A4W.png "SessionTrackerImpl的整体内容")
+
+先看下session有哪些属性：
+
+-	final long sessionId：session的唯一标示
+-	final int timeout：这个session的timeout时间（即上文中客户端和服务器端商定下来的timeout时间）
+-	long tickTime：这个session的下一次超时时间点（随着客户端不断的发送PING请求，就会不断的刷新该时间，不断的往后变化）
+-	boolean isClosing：session的标示符，用于标示session是否还被正常使用
+-	Object owner：创建该session的owner。会在客户端更换所连接的服务器的时候用到（之后详细说明）
+
+然后再来看看SessionTracker的几个数据：
+
+-	HashMap<Long, SessionImpl> sessionsById：很简单，以sessionId存储session
+-	ConcurrentHashMap<Long, Integer> sessionsWithTimeout：以sessionId存储每个session的timeout时间
+-	HashMap<Long, SessionSet> sessionSets：某个时间点上的session集合（用于session过期检查）
+-	long nextSessionId：初始的sessionId，之后创建的sessionId就在此基础上自增
+-	nextExpirationTime：下一次过期时间点，每当到该时间点就会进行一次session的过期检查
+-	expirationInterval：session过期检查的周期
+
+要搞清楚的内容有：1 创建session的过程 2 session过期检查的过程
+
+先来看看创建session的过程：
+
+![创建session](https://static.oschina.net/uploads/img/201508/01084539_fvwg.png "创建session")
+
+代码很简单，就是创建一个SessionImpl对象，然后存储到SessionTracker中，同时开始计算session的超时时间。这里有一个内容就是sessionId的来历，我们可以看到就是根据nextSessionId来的，并且是不断自增的。
+
+sessionId是一个客户端的重要标示，是全局唯一的，先来看看单机版的nextSessionId初始化：
+
+![创建SessionTrackerImpl](https://static.oschina.net/uploads/img/201508/01085654_xyjx.png "创建SessionTrackerImpl")
+
+![SessionTrackerImpl构造函数](https://static.oschina.net/uploads/img/201508/01085805_s5fB.png "SessionTrackerImpl构造函数")
+
+![初始化nextSessionId](https://static.oschina.net/uploads/img/201508/01085907_cYPK.png "nextSessionId")
+
+
+单机版的服务器使用1通过计算来初始化nextSessionId。而集群版对应的id则分别是每个机器指定的sid。计算过程如下：
+
+![初始化nextSessionId说明](https://static.oschina.net/uploads/img/201508/01092329_rvg1.png "初始化nextSessionId说明")
+
+-	第一步：就是取当前时间，为  10100111011100110110010101110100111100011  为41为二进制
+-	第二步：long有64位，左移24位，其实是除掉了前面的1，后面补了24位的0。
+-	第三步：第二步的结果可能是正数也可能是负数，目前是正数，之后可能就是负数了，你可以算一下需要多少年，哈哈。为了保证右移的时候，进行补0操作，需要使用无符号右移，即>>>。这里使用了无符号右移8位
+-	第四步：将传过来的id这里即1左移56位。然后再与第三步的正数结果进行或操作，得到最终的基准nextSessionId，所以当这里的id值不是很大的话，一般几台机器而已，也保证了sessionId是一个正数，同时前八位就是机器的sid号。所以每台机器的的前八位是不同的，保证了每台机器中不会配置相同的sessionId，每台机器的sessionId又是自增操作，所以单台机器内sessionId也是不会重复的。
+
+综上所示保证了sessionId是唯一的，不会出现重复分配的情况。
+
+搞清楚了sessionId的分配，接下来就要弄清楚如何进行session的过期检查问题：
+
+我们先看下，session激活过程是怎么处理的：
+
+![session的激活](https://static.oschina.net/uploads/img/201508/01095617_mclz.png "session的激活")
+
+-	首先获取这个session数据，然后计算它的超期时间
+
+		long expireTime = roundToInterval(System.currentTimeMillis() + timeout);
+		
+		private long roundToInterval(long time) {
+	        // We give a one interval grace period
+	        return (time / expirationInterval + 1) * expirationInterval;
+	    }
+
+	即是拿当前时间加上这个session的timeout时间，然后对其进行取expirationInterval的整，即始终保持是expirationInterval的正数倍，即每个session的过期时间点最终都会落在expirationInterval的整数倍上。
+
+-	如果原本该session的超期时间就大于你所计算出的超期时间，则不做任何处理，否则设置该session的超期时间为上述计算结果的超期时间。
+
+-	取出原本该session所在的超期时间，从集合里面删除
+
+-	重新获取现在超期时间所在的集合，添加进去
+
+
+综上所述，session的激活其实就是重新计算下超时时间，最终取expirationInterval的正数倍，然后从之前时间点的集合中移除，然后再添加到新的时间点的集合中去。
+
+至此，session的检查就方便多了，只需要在expirationInterval整数时间点上取出集合，然后一个个标记为过期即可。而那些不断被激活的session，则不断的从一个时间点的集合中换到下一个时间点的集合中。
+
+SessionTrackerImpl也是一个线程，该线程执行内容就是session的过期检查：
+
+![SessionTrackerImpl线程执行过期检查](https://static.oschina.net/uploads/img/201508/01101200_A8Da.png "SessionTrackerImpl线程执行过期检查")
+
+
+
+
+
 
 	
