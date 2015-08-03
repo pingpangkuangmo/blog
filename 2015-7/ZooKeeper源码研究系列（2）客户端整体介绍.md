@@ -1,6 +1,7 @@
 #1 系列目录
 
--	[ZooKeeper源码环境搭建]()
+-	[ZooKeeper源码研究系列（1）源码环境搭建](http://my.oschina.net/pingpangkuangmo/blog/484955)
+-	[ZooKeeper源码研究系列（2）客户端创建连接过程分析](http://my.oschina.net/pingpangkuangmo/blog/486780)
 
 #2 客户端API简单使用
 
@@ -358,13 +359,43 @@ sessionId是一个客户端的重要标示，是全局唯一的，先来看看�
 
 至此，session的检查就方便多了，只需要在expirationInterval整数时间点上取出集合，然后一个个标记为过期即可。而那些不断被激活的session，则不断的从一个时间点的集合中换到下一个时间点的集合中。
 
-SessionTrackerImpl也是一个线程，该线程执行内容就是session的过期检查：
+SessionTrackerImpl也是一个线程，该线程执行内容就是session的过期检查,如下所示：
 
 ![SessionTrackerImpl线程执行过期检查](https://static.oschina.net/uploads/img/201508/01101200_A8Da.png "SessionTrackerImpl线程执行过期检查")
 
+##4.2 根据sessionId创建出密码
 
+回到创建session的三大步骤：
 
+![创建session](https://static.oschina.net/uploads/img/201508/01065436_4nHs.png "创建session")
 
+来看下密码是如何来产生的：
 
+	Random r = new Random(sessionId ^ superSecret);
+    r.nextBytes(passwd);
 
-	
+其中superSecret为常量
+
+	static final private long superSecret = 0XB3415C00L;
+
+使用Random的方式来随机生成字节数组。但是该字节数组，只要参数即sessionId相同，字节数组的内容就相同。即当我们知道了sessionId，就可以利用上述方式算出对应的密码，我感觉密码基本上没什么用。
+
+再看下当客户端带着sessionId和密码进行连接的时候，这时会进行密码的检查：
+
+![检查密码](https://static.oschina.net/uploads/img/201508/03074423_76pg.png "检查密码")
+
+看了上面的代码，就再次验证了密码没什么鸟用，知道了sessionId，就完全知道了密码。所以这一块有待改进吧，应该不能由sessionId完全决定吧，如再加上当前时间等等，让客户端造不出来密码，同时服务器端存储加密后的密码。
+
+##4.2 提交这个创建session的请求到请求处理器链
+
+本文内容已太多，这里就先简单描述下，之后再详细的讲解
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/03075424_mWCy.png "在这里输入图片标题")
+
+如果是成功创建session，则把sessionTimeout、sessionId、passwd传递给客户端。如果没有成功创建，上述三者的值分别是0,0,new byte[16]
+
+之后客户端处理该响应的过程，上面已经说了，可以回头再看下。
+
+#5 结束语
+
+下一篇文章开始讲述zooKeeper集群时，服务器端对用户的创建连接请求的处理。
