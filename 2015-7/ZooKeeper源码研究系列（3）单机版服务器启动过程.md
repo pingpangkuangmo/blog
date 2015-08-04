@@ -68,6 +68,44 @@ ZooKeeperServer是单机版才使用的服务器对象，集群版都是使用�
 
 ##3.2 ZKDatabase介绍
 
+先来看下ZKDatabase的注释和属性
+
+![ZKDatabase的注释和属性](https://static.oschina.net/uploads/img/201508/04190119_Vf9w.png "ZKDatabase的注释和属性")
+
+从注释中可以看到ZKDatabase中所包含的信息有：
+
+-	sessions信息，即ConcurrentHashMap<Long, Integer> sessionsWithTimeouts，也就是说仅仅会保存sessionId对应的timeout时间
+-	DataTree：即ZooKeeper的内存节点信息
+-	LinkedList<Proposal> committedLog：用于保存最近提交的一些事物
+
+来重点看下DataTree的实现：
+
+-	ConcurrentHashMap<String, DataNode> nodes =new ConcurrentHashMap<String, DataNode>();
+
+	维护了path对应的DataNode。每个DataNode内容如下：
+	
+	![DataNode内容](https://static.oschina.net/uploads/img/201508/04195703_gKTY.png "DataNode内容")
+
+	有DataNode parent和Set<String> children，同时byte data[]存储本节点的数据。StatPersisted stat存储本节点的状态信息
+
+-	Map<Long, HashSet<String>> ephemerals =new ConcurrentHashMap<Long, HashSet<String>>()
+
+	维护了每个session对应的临时节点的集合
+
+-	WatchManager dataWatches、WatchManager childWatches分别用于管理节点自身数据更新的事件触发和该节点的所有子节点变动的事件触发。
+
+	每个WatchManager的结构如下：
+
+	![WatchManager的结构](https://static.oschina.net/uploads/img/201508/04200955_u6qy.png "WatchManager的结构")
+
+	watchTable维护着每个path对应的Watcher。watch2Paths维护着每个Watcher监控的所有path，即每个Watcher是可以监控多个path的。在服务器端Watcher的实现其实是ServerCnxn，如下：
+
+		public abstract class ServerCnxn implements Stats, Watcher
+	
+	而每个ServerCnxn则代表服务器端为每个客户端分配的handler，负责与客户端进行通信。客户端每次对某个path注册的Watcher,在传输给服务器端的时候仅仅是传输一个boolean值，即是否监听某个path，并没有把我们自定义注册的Watcher传输到服务器端（况且Watcher也不能序列化），而是在本地客户端进行存储，存储着对某个path注册的Watcher。服务器端接收到该boolean值之后，如果为true，则把该客户端对应的ServerCnxn作为Watcher存储到上述WatchManager中，即上述WatchManager中存储的是一个个ServerCnxn实例。一旦服务器端数据变化，触发对应的ServerCnxn，ServerCnxn然后把该事件又传递客户端，客户端这时才会真正引发我们自定义注册的Watcher。
+
+	上面只是简单描述了一下，之后的文章会详细源码分析整个过程。
+
 ##3.3 ZooKeeperServer请求处理器链介绍
 
 ##3.4 ServerStats介绍
