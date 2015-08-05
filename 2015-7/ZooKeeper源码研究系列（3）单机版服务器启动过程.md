@@ -106,6 +106,19 @@ ZooKeeperServer是单机版才使用的服务器对象，集群版都是使用�
 
 	上面只是简单描述了一下，之后的文章会详细源码分析整个过程。
 
+DataTree就负责进行node的增删改查。
+
+要解决的问题：
+
+如何创建一个node，根据node的类型：持久型节点、持久顺序型节点、临时节点、临时顺序型节点
+
+通过 stat.setEphemeralOwner(ephemeralOwner);中的ephemeralOwner是否为0来判断是否是持久型和临时节点
+
+在调用DataTree的createNode方法时已经是变更过的path路径了。
+
+顺序型节点如何实现呢？
+
+
 
 
 ##3.3 ZooKeeperServer请求处理器链介绍
