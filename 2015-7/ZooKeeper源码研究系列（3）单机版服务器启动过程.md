@@ -106,6 +106,8 @@ ZooKeeperServer是单机版才使用的服务器对象，集群版都是使用�
 
 	上面只是简单描述了一下，之后的文章会详细源码分析整个过程。
 
+
+
 ##3.3 ZooKeeperServer请求处理器链介绍
 
 ##3.4 ServerStats介绍
