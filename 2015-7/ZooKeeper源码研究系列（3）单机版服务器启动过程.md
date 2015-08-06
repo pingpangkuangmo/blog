@@ -108,17 +108,37 @@ ZooKeeperServer是单机版才使用的服务器对象，集群版都是使用�
 
 DataTree就负责进行node的增删改查。
 
-要解决的问题：
+我们知道node的类型分为四种类型：
 
-如何创建一个node，根据node的类型：持久型节点、持久顺序型节点、临时节点、临时顺序型节点
+-	PERSISTENT：持久型节点
+-	PERSISTENT_SEQUENTIAL：持久型顺序型节点
+-	EPHEMERAL：临时型节点
+-	EPHEMERAL_SEQUENTIAL：临时型顺序型节点
 
-通过 stat.setEphemeralOwner(ephemeralOwner);中的ephemeralOwner是否为0来判断是否是持久型和临时节点
+前两者持久型节点和后两者临时型节点的不同之处就在于，一旦当客户端session过期，则会清除临时型节点，不会清除持久型节点，除非去执行删除操作。
 
-在调用DataTree的createNode方法时已经是变更过的path路径了。
+而顺序型节点，则是每次创建一个节点，会在一个节点路径的后面加上父节点的cversion版本号（即该父节点的所有子节点一旦发生变化，就会自增该版本号）的格式化形式，如下：
 
-顺序型节点如何实现呢？
+![顺序型节点来来历](https://static.oschina.net/uploads/img/201508/06071819_oZE9.png "顺序型节点来来历")
 
+可以看到是将父节点的cversion版本号以10进制形式输出，宽度是10位，不足的话前面补0。所以是在执行DataTree创建node方法之前就已经定好了path路径的。
 
+再来看下是如何区分持久型和临时型节点的呢？
+
+在DataTree创建node方法会传递一个ephemeralOwner参数，当客户端选择的是持久型节点，给出的sessionId为0，当为临时型节点时，给出客户端的sessionId,如下：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/06072814_QcGi.png "在这里输入图片标题")
+
+先来看下DataTree创建node方法的方法：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/06073140_syp2.png "在这里输入图片标题")
+
+-	先判断父节点存不存在，不存在的话，报错。
+-	然后检查父节点的所有子节点是否已存在要创建的节点，如果存在报错。
+-	创建出节点，并存放到DataTree的ConcurrentHashMap<String, DataNode> nodes属性中，见上文描述
+-	判断该节点是否是临时节点，如果是临时节点，则ephemeralOwner参数即为客户端的sessionId。然后以sessionId为key，存储该客户端所创建的所有临时节点到DataTree的Map<Long, HashSet<String>> ephemerals属性中，见上文描述
+
+ZKDatabase先暂时介绍到这里，之后抽出一篇文章单独介绍DataTree和FileTxnSnapLog。
 
 
 ##3.3 ZooKeeperServer请求处理器链介绍
