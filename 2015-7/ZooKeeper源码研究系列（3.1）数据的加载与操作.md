@@ -140,29 +140,8 @@ DataTree就负责进行node的增删改查。
 
 ZKDatabase先暂时介绍到这里，之后抽出一篇文章单独介绍DataTree和FileTxnSnapLog。
 
+
 ##3.3 ZooKeeperServer请求处理器链介绍
-ZooKeeper使用请求处理器链的方式来处理请求，先看下请求处理器的定义RequestProcessor:
-
-![RequestProcessor定义](https://static.oschina.net/uploads/img/201508/07072024_h4Gr.png "RequestProcessor定义")
-
-从注释上可以看到几个要点：
-
--	RequestProcessor是以责任链的形式来处理事务的。
--	请求是被顺序的进行处理的，单机版、集群版的Leader、Follower略有不同
--	对于请求的处理，是通过processRequest(Request request)方法来处理的。有些处理器是一个线程，即请求被扔到该线程中进行处理
--	当调用shutdown时，也会关闭它所关联的RequestProcessor
-
-来看下ZooKeeperServer请求处理器链的具体情况：
-
-![ZooKeeperServer请求处理器链](https://static.oschina.net/uploads/img/201508/07075617_AElm.png "ZooKeeperServer请求处理器链")
-
-即PrepRequestProcessor-》SyncRequestProcessor-》FinalRequestProcessor
-
-来一个一个具体看看：
-
-
-
-	
 
 ##3.4 ServerStats介绍
 
