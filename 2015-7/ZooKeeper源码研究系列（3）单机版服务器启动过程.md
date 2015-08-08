@@ -160,9 +160,69 @@ ZooKeeper使用请求处理器链的方式来处理请求，先看下请求处�
 
 来一个一个具体看看：
 
+###3.3.1 PrepRequestProcessor处理器
 
+主要内容：对请求进行区分是否是事务请求，如果是事务请求则创建出事务请求头，同时执行一些检查操作。
 
+大体属性如下：
+
+![PrepRequestProcessor属性](https://static.oschina.net/uploads/img/201508/08113256_o8j9.png "PrepRequestProcessor属性")
+
+-	LinkedBlockingQueue<Request> submittedRequests：提交的用户请求
+-	RequestProcessor nextProcessor：下一个请求处理器
+-	ZooKeeperServer zks：服务器对象
+
+PrepRequestProcessor所实现的processRequest接口方法即为：将该请求放入submittedRequests请求队列中。同时PrepRequestProcessor又是一个线程，在run方法中又会不断的取出上述用户提交的请求，进行处理，整个处理过程如下：
+
+![创建事务请求头](https://static.oschina.net/uploads/img/201508/08114347_XpgI.png "创建事务请求头")
+
+对于增删改等影响数据状态的操作都被认为是事务，需要创建出事务请求头。
+
+![只需验证session](https://static.oschina.net/uploads/img/201508/08114632_QYRC.png "只需验证session")
+
+createSession、closeSession也属于事务操作，而那些获取数据的操作则不属于事务操作，只需要验证下sessionId是否合法等
+
+处理完成之后就交给了下一个处理器继续处理该请求。
+
+我们以创建session和创建节点为例，来具体看下代码：
+
+先看下创建session，即如下代码：
+
+![session创建处理](https://static.oschina.net/uploads/img/201508/08181502_bkJg.png "session创建处理")
+
+首先会为该request获取一个事务id即zxid，该zxid的值来自于ZooKeeper服务器的一个hzxid变量，默认是0，每来一个请求就会执行自增操作。
+
+![创建事务请求头](https://static.oschina.net/uploads/img/201508/08182446_0gDL.png "创建事务请求头")
 	
+![创建session的具体内容](https://static.oschina.net/uploads/img/201508/08182740_IlXi.png "创建session的具体内容")
+
+首先获取客户端传递过来的sessionTimeout时间，然后使用ZooKeeperServer的sessionTracker来创建一个session，同时为该session的owner属性赋值，但是对于创建session的request请求，并没有为owner赋值。而是在创建其他请求的时候才会为请求的owner赋值为本机器。
+
+代码见证如下：
+
+创建session的request如下：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/08184808_Usqm.png "在这里输入图片标题")
+
+创建其他的request的如下：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/08184718_Lsmw.png "在这里输入图片标题")
+
+接下来看看创建一个node的处理：
+
+-	首先进行的是session检查。
+
+	![session及owner的检查](https://static.oschina.net/uploads/img/201508/08185231_cYhk.png "session及owner的检查")
+
+	先检查服务器端该sessionId还是否存在，如果不存在则表示已经过期，抛出SessionExpiredException异常。如果session存在，owner为空，则会对owner进行赋值。如果owner存在则进行owner核对，如果不一致抛出SessionMovedException异常。
+
+	第一次创建session后，该session的owner是为空的，之后的请求操作owner都是有值的，此时则会为该session赋值。
+
+	我们想象下这样的场景：客户端连接一台服务器server1，该客户端拥有的session的owner是server1，客户端发送操作请求，由于网络原因造成请求阻塞，客户端认为server1不稳定，则会拿着刚才的session去连接另一台服务器server2，连接成功后，该session对应的owner被设置为null了（根据上文知道创建session的时候，owner会被清空），然后继续在server2上执行同样的操作，此时会为该session的owner属性赋值为server2，如果之前对server1的请求此时终于到达server1了，此request的owner是server1，则在检查的时候，发现该owner不一致，server1则会抛出SessionMovedException异常。即session的owner已经变化了的异常。则会阻止该请求的执行，防止了重复执行相同的操作。
+
+
+
+
 
 ##3.4 ServerStats介绍
 
