@@ -234,11 +234,56 @@ createSession、closeSession也属于事务操作，而那些获取数据的操�
 
 ###3.3.2 SyncRequestProcessor处理器
 
+主要对事务请求进行日志记录，同时事务请求达到一定次数后，就会执行一次快照。
 
+主要属性如下：
 
+![SyncRequestProcessor属性](https://static.oschina.net/uploads/img/201508/10075512_zXMD.png "SyncRequestProcessor属性")
 
+-	ZooKeeperServer zks：ZooKeeper服务器对象
+-	LinkedBlockingQueue<Request> queuedRequests：提交的请求（包括事务请求和非事务请求）
+-	RequestProcessor nextProcessor：下一个请求处理器
+-	Thread snapInProcess：执行一次快照任务的线程
+-	LinkedList<Request> toFlush：那些已经被记录到日志文件中但还未被flush到磁盘上的事务请求
+-	int snapCount：发生了snapCount次的事务日志记录，就会执行一次快照
+-	int randRoll：上述是一个对所有服务器都统一的配置数据，为了避免所有的服务器在同一时刻执行快照任务，实际情况为发生了（snapCount / 2 + randRoll）次的事务日志记录，就会执行一次快照。randRoll的计算方式如下：
 
+		r.nextInt(snapCount/2)
 
+接下来就详细看下SyncRequestProcessor（也是一个线程）的详细实现：
+
+对于RequestProcessor定义的接口：processRequest(Request request)，SyncRequestProcessor和PrepRequestProcessor一样，都是讲请求放入阻塞式队列中，然后在线程run方法中执行相应的逻辑操作。
+
+首先还是从LinkedBlockingQueue<Request> queuedRequests队列中取出一个Request，处理如下：
+
+![SyncRequestProcessor处理过程](https://static.oschina.net/uploads/img/201508/10081710_QtdC.png "SyncRequestProcessor处理过程")
+
+-	第一步：将该请求添加到事务日志中，这一部分会区分Request是事务请求还是非事务请求，依据就是前一个处理器PrepRequestProcessor为Request加上的事务请求头。如果是事务请求，则添加成功后返回true，添加成功即为将该请求序列化到一个指定的文件中。如果是非事务请求，直接返回false。
+-	第二步：如果是事务请求，添加到事务日志中后，logCount++，该logCount就是用于记录已经执行多少次事务请求序列化到日志中了。
+-	第三步：一旦logCount超过（snapCount / 2 + randRoll）次后，就需要执行一次快照了。
+-	第四步：先将当前的事务日志记录flush到磁盘中，然后设置当前流为null，以便下一次事务日志记录重新开启一个新的文件来记录
+-	第五步：创建一个ZooKeeperThread线程，用于执行一次快照任务，则会把当前的dataTree和sessionsWithTimeouts信息序列化到一个文件中。
+-	第六七步：如果是非事务请求的话，则会直接交给下一个RequestProcessor处理器来处理。我们看到这里还加上了一个toFlush.isEmpty()的判断，即之前没有请求遗留，只有在这样的条件下才会直接交给下一个RequestProcessor处理器来处理，主要是为了保证请求的顺序性。如果之前还有遗留的请求，则后来的请求不能被先处理。
+
+上述的请求除了直接被下一个处理器处理的情况，其余大部分都会被保存到LinkedList<Request> toFlush中，什么时候才会被执行呢？
+
+![toFlush中的request被执行1](https://static.oschina.net/uploads/img/201508/10083715_WfJr.png "toFlush中的request被执行1")
+
+![toFlush中的request被执行2](https://static.oschina.net/uploads/img/201508/10083918_j9z7.png "toFlush中的request被执行2")
+
+两种情况下会被执行flush：
+
+-	当request数量超过1000
+-	当没有请求到来的时候
+
+来看下具体的flush过程：
+
+![flush过程](https://static.oschina.net/uploads/img/201508/10084347_zN1q.png "flush过程")
+
+-	第一步：执行事务日志文件执行commit操作。上述rollLog操作仅仅是先flush，然后设置当前日志记录流为null，以便下一次重新开启一个新的事务日志文件，同时这些流都会被保存到LinkedList<FileOutputStream> streamsToFlush属性中，commit操作则是先flush这些所有的流，然后执行这些流的close操作。
+-	第二步：便是将请求交给下一个处理器来处理
+
+至此SyncRequestProcessor的内容也完成了，接下来就是下一个请求处理器即FinalRequestProcessor
 
 ##3.4 ServerStats介绍
 
