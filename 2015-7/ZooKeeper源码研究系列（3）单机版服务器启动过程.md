@@ -285,5 +285,16 @@ createSession、closeSession也属于事务操作，而那些获取数据的操�
 
 至此SyncRequestProcessor的内容也完成了，接下来就是下一个请求处理器即FinalRequestProcessor
 
+###3.3.2 FinalRequestProcessor处理器
+
+作为处理器链上的最后一个处理器，负责执行请求的具体任务，前面几个处理器都是辅助操作，如PrepRequestProcessor为请求添加事务请求头和执行一些检查工作，SyncRequestProcessor也仅仅是把该请求记录下来保存到事务日志中。该请求的具体内容，如获取所有的子节点，创建node的这些具体的操作就是由FinalRequestProcessor来完成的。
+
+下面就来详细看看FinalRequestProcessor处理request的过程
+
+![FinalRequestProcessor的处理内容](https://static.oschina.net/uploads/img/201508/11080051_wAyR.png "FinalRequestProcessor的处理内容")
+
+-	对于request是顺序执行，所以要删除那些zxid小于当前request的zxid的outstandingChanges、以及outstandingChangesForPath
+。这里就有一个疑问：outstandingChanges数据是由PrepRequestProcessor在预处理事务请求头的时候产生的，他们又被谁来消费呢？他们主要作用是什么？
+
 ##3.4 ServerStats介绍
 
