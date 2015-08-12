@@ -293,8 +293,32 @@ createSession、closeSession也属于事务操作，而那些获取数据的操�
 
 ![FinalRequestProcessor的处理内容](https://static.oschina.net/uploads/img/201508/11080051_wAyR.png "FinalRequestProcessor的处理内容")
 
--	对于request是顺序执行，所以要删除那些zxid小于当前request的zxid的outstandingChanges、以及outstandingChangesForPath
+-	对于request是顺序执行，要删除那些zxid小于当前request的zxid的outstandingChanges、以及outstandingChangesForPath
 。这里就有一个疑问：outstandingChanges数据是由PrepRequestProcessor在预处理事务请求头的时候产生的，他们又被谁来消费呢？他们主要作用是什么？
+
+-	接着就是落实具体的事务操作了，如创建节点、删除节点、设置数据等
+
+来具体看下这个过程：
+
+![ZK执行事务过程](https://static.oschina.net/uploads/img/201508/12074114_UnOk.png "ZK执行事务过程")
+
+这些事务操作分成两种情况，一部分就是针对dataTree的增删改节点，另一种就是创建session，关闭session。创建和关闭session都是使用sessionTracker来完成，这一部分之前已经详细描述过了。下面具体看下针对dataTree的增删改节点：
+
+![DataTree执行事务操作](https://static.oschina.net/uploads/img/201508/12074717_I6lq.png "DataTree执行事务操作")
+
+根据事务请求头的不同类型，分别执行增删改操作。对于增加节点上面也已经详细描述过了。
+
+接下来就是开始准备返回值，然后响应给客户端。以创建session为例：
+
+![响应session的创建](https://static.oschina.net/uploads/img/201508/12081402_0Lps.png "响应session的创建")
+
+使用sessionTimeout（客户端传递的sessionTimeout和服务器端协商后的），sessionId，根据sessionId获取的密码  这些数据构建一个ConnectResponse，然后进行序列化，传给客户端，并开始接收客户端的请求。
+
+上述是session创建成功的时候。即上图中的valid为true。什么时候为fasle呢？
+
+当你已经创建session了，但是同服务器的连接断开了，然后拿着该session去重新连接下一台服务器，如果密码是错误的，服务器则会这设置valid为false。如果密码是正确的，但是在于服务器端已经建立TCP连接后，此时该重新激活session了，但是发现该session已经过期了，被服务器端清除了，也会导致valid为false。
+
+一旦valid为false，返回给客户端的sessionTimeout为0，sessionId为0，密码为空。客户端在接收到该数据后，看到sessionTimeout为0，则认为建立session关联失败，发出session过期的异常事件，开始走向死亡，即客户端的ZooKeeper对象不可用，必须要重新创建一个新的ZooKeeper对象。
 
 ##3.4 ServerStats介绍
 
