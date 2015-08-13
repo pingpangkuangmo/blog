@@ -22,9 +22,9 @@
 -	第四步：创建ServerCnxnFactory，用于创建ServerSocket，等待客户端的socket连接
 -	第五步：启动ZooKeeperServer服务
 
-下面分别来详细说明
+后面第四部分详细说明。
 
-#3 创建一个ZooKeeperServer服务器对象
+#3 ZooKeeperServer服务器对象
 
 ZooKeeperServer是单机版才使用的服务器对象，集群版都是使用的是它的子类，来看下继承类图
 
@@ -224,7 +224,7 @@ createSession、closeSession也属于事务操作，而那些获取数据的操�
 
 -	从CreateRequest中获取用户创建的node的类型，如果是临时节点的话，则根据父路径的子节点的版本cversion，来生成该临时节点的路径后缀部分。然后验证该路径是否存在，如果存在则抛出NodeExistsException异常
 
--	判断父节点是否是临时节点，如果是临时节点则不应该有子节点，抛出NoChildrenForEphemeralsException异常，我认为这部分代码该判断应该是提前应该做的，而不是留到现在才来判断
+-	判断父节点是否是临时节点，如果是临时节点则不应该有子节点，抛出NoChildrenForEphemeralsException异常，这部分代码该判断应该是提前应该做的，而不是留到现在才来判断
 
 -	如果该节点是临时节点，则为该节点ephemeralOwner属性设置为对应的sessionId，如果是永久节点则设置为0。而DataTree则是依据ephemeralOwner是否为0，来判断是否是临时节点还是持久节点，如果是临时节点，则会另外存储一份数据，以sessionId为key，即列出了每个sessionId所包含的所有临时节点，一旦该sessionId失效，则直接拿出该列表进行清除操作即可，不用再去遍历所有的节点了。
 
@@ -322,3 +322,58 @@ createSession、closeSession也属于事务操作，而那些获取数据的操�
 
 ##3.4 ServerStats介绍
 
+它是用于统计服务器的运行数据的。
+
+![ServerStats属性](https://static.oschina.net/uploads/img/201508/13072530_LFX8.png "ServerStats属性")
+
+-	packetsSent：服务器端已发送的数据包
+-	packetsReceived：服务器端已接收的数据包
+-	maxLatency：处理一次请求的最大延迟
+-	minLatency：处理一次请求的最小延迟
+-	totalLatency：服务器端处理请求的总延迟
+-	count：服务器端已经处理的请求数
+
+ZooKeeperServer会创建一个ServerCnxnFactory，即创建了ServerSocket，等待客户端连接。每来一个客户端的TCP连接，ServerCnxnFactory就会为该连接创建一个ServerCnxn，每个ServerCnxn也会统计上述信息，即单独针对某个客户端的数据。而ZooKeeperServer则是统计所有客户端的上述数据。
+
+#4 单机版服务器启动概述
+
+上面描述了ZooKeeper服务器的几个重要数据，下面就概述下单机版服务器的服务过程：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/04071117_YNcA.png "在这里输入图片标题")
+
+-	第一步：创建一个ZooKeeperServer，代表着一个服务器对象，同时会创建出ServerStats用于统计服务器运行数据
+-	第二步：根据配置参数dataLogDir和dataDir创建出用于管理事务日志和快照的对象FileTxnSnapLog，用于从磁盘上恢复数据和将内存数据快照到磁盘上、事务请求记录到磁盘上。
+-	第三步：对ZooKeeperServer设置一些配置参数，如tickTime、minSessionTimeout、maxSessionTimeout
+-	第四步：创建ServerCnxnFactory，用于创建ServerSocket，等待客户端的socket连接
+-	第五步：启动ZooKeeperServer服务
+
+
+当客户端第一次TCP连接ZooKeeper服务器的时候：
+
+-	上述ServerCnxnFactory会为该客户端创建出一个ServerCnxn服务器代理对象，单独用于处理和该客户端的通信，TCP连接建立成功
+
+-	TCP连接建立成功后，客户端开始发送ConnectRequest请求，申请sessionId，会传递sessionTimeout时间。
+
+-	ServerCnxn接收到该申请后，根据客户端传递过来的sessionTimeout时间以及ZooKeeperServer本身的minSessionTimeout、maxSessionTimeout参数，确定最终的sessionTimeout时间
+
+-	sessionTimeout确定好了，就开始判断客户端的请求是否已经含有sessionId，如果含有，则执行sessionId的是否过期、密码是否正确等检查。如果没有sessionId，则会使用sessionTracker分配sessionId，创建一个session。该session含有上述确定的sessionTimeout信息，即每个session都有各自的sessionTimeout信息。
+
+-	之后就是构建一个Request请求，该请求的类型就是创建session。然后将该请求交给请求处理器链来处理。请求处理器链为PrepRequestProcessor-》SyncRequestProcessor-》FinalRequestProcessor。
+
+
+-	首先是PrepRequestProcessor的处理，它对请求分成事务请求和非事务请求。事务请求即能改变服务器状态数据的一些操作，即node的增删改，session的创建关闭等。为这些事务请求加上事务请求头，后面的请求处理器都是基于是否含有事务请求头来判别该请求是否是事务请求。
+同时对事务请求进行一些检查，如session是否过期，session的owner是否一致、节点是否存在等。对于创建session来说，就检查了下session是否过期。同时会对所有请求都分配zxid。
+
+
+-	接下来是SyncRequestProcessor的处理：仅仅对事务请求进行记录到事务日志中，一旦事务请求达到一定数量，就会执行一次对内存DataTree数据和session数据的快照。
+
+-	最后就是FinalRequestProcessor处理器：真正执行数据操作的地方。如为DataTree添加节点、删除节点、更改数据、查询数据等。同时也负责统计整个服务器端处理过程的最大延迟、最小延迟、总延迟、总处理数，每个ServerCnxn也针对自己的客户端也进行响应的统计。最后FinalRequestProcessor处理上述事务操作的结果给客户端。如创建session，则是返回sessionTimeout、sessionId、密码数据给客户端。如果创建失败，则返回的sessionTimeout为0，sessionId为0，密码为空。
+
+
+客户端对服务器端响应的结果的处理：
+
+-	首先判断服务器端返回的sessionTimeout是否小于等于0
+
+	如果是，则认为申请sessionId失败，向eventThread中添加了两个事件。首先是session过期的事件即KeeperState.Expired，客户端的默认Watcher接收到之后，必须自行采取响应的处理操作（如重新创建一个ZooKeeper对象），因为客户端的ZooKeeper对象即将失效了。第二个事件就是一个死亡事件，eventThread遇到该事件后，就会跳出事件循环，eventThread线程走向结束。
+
+	如果不是，则认为申请sessionId成功。则保存服务器端给出的sessionId、密码、sessionTimeout数据，重置客户端的readTimeout、connectTimeout。然后通过eventThread发送一个成功连接的事件即KeeperState.SyncConnected，客户端在接收到该事件后就可以执行相应的操作了。
