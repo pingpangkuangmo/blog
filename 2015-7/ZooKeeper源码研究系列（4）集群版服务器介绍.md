@@ -2,6 +2,7 @@
 
 -	[ZooKeeper源码研究系列（1）源码环境搭建](http://my.oschina.net/pingpangkuangmo/blog/484955)
 -	[ZooKeeper源码研究系列（2）客户端创建连接过程分析](http://my.oschina.net/pingpangkuangmo/blog/486780)
+-	[ZooKeeper源码研究系列（3）单机版服务器介绍](http://my.oschina.net/pingpangkuangmo/blog/491673)
 
 #2 集群版服务器启动过程
 
@@ -65,6 +66,22 @@
 
 ##2.2 集群版服务器启动概述
 
+我们由前一篇文章知道了，单机版的服务器启动，就是创建了一个ZooKeeperServer对象。我们需要再次熟悉下ZooKeeperServer的类图，如下：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201508/16204328_r3DX.png "在这里输入图片标题")
+
+可见Leader服务器要使用LeaderZooKeeperServer，Follower服务器要使用FollowerZooKeeperServer。而集群版服务器启动后，可能是Leader或者Follower。在运行过程中角色还会进行自动更换，即自动更换使用不同的ZooKeeperServer子类。此时就需要一个代理对象，用于角色的更换、所使用的ZooKeeperServer的子类的更换。这就是QuorumPeer，如下图
+
 ![输入图片说明](https://static.oschina.net/uploads/img/201508/15183729_iL6W.png "在这里输入图片标题")
+
+这里面很多的配置属性都交给了QuorumPeer，由它传递给底层所使用的ZooKeeperServer子类。
+
+来详细看看这些配置属性：
+
+-	ServerCnxnFactory cnxnFactory：负责和客户端建立连接和通信
+
+-	FileTxnSnapLog logFactory：通过dataDir和dataLogDir目录，用于事务日志记录和内存DataTree和session数据的快照。
+
+-	
 
 #3 集群版建立连接过程
