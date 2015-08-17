@@ -39,6 +39,8 @@
 		分别是tickTime的2倍和20倍。
 
 		客户端代码在创建ZooKeeper对象的时候会给出一个sessionTimeout时间，而上述的minSessionTimeout和maxSessionTimeout就是用来约束客户端的sessionTimeout
+	
+	-	用途3：作为initLimit和syncLimit时间的基数，见下面
 
 -	initLimit：在初始化阶段和Leader的通信的读取超时时间，即当调用socket的InputStream的read方法时最大阻塞时间不能超过initLimit*tickTime。设置如下：
 
@@ -118,5 +120,71 @@
 然后就是启动QuorumPeer，之后阻塞主线程，启动过程如下：
 
 ![QuorumPeer启动过程](https://static.oschina.net/uploads/img/201508/17084516_gCVp.png "QuorumPeer启动过程")
+
+
+主要分成4大步：
+
+-	loadDataBase()：从事务日志目录dataLogDir和数据快照目录dataDir中恢复出DataTree数据
+
+-	cnxnFactory.start()：开启对客户端的连接端口
+
+-	startLeaderElection()：创建出选举算法
+
+-	super.start()：启动QuorumPeer线程，在该线程中进行服务器状态的检查
+
+不再重点说明选举过程，后面会专门抽出一篇博客来详细说明选举过程。
+
+QuorumPeer本身继承了Thread，在run方法中不断的检测当前服务器的状态，即QuorumPeer的ServerState state属性。ServerState枚举内容如下：
+
+	public enum ServerState {
+        LOOKING, FOLLOWING, LEADING, OBSERVING;
+    }
+
+-	LOOKING：即该服务器处于Leader选举阶段
+
+-	FOLLOWING：即该服务器作为一个Follower
+
+-	LEADING:即该服务器作为一个Leader
+
+-	OBSERVING：即该服务器作为一个Observer
+
+在QuorumPeer的线程中操作如下：
+
+-	服务器的状态是LOOKING，则根据之前创建的选举算法，执行选举过程
+
+	选举过程一直阻塞，直到完成选举。完成选举后，各自的服务器根据投票结果判定自己是不是被选举成Leader了，如果不是则状态改变为FOLLOWING，如果是Leader，则状态改变为LEADING。
+
+-	服务器的状态是LEADING：则会创建出LeaderZooKeeperServer服务器，然后封装成Leader，调用Leader的lead()方法，也是阻塞方法，只有当该Leader挂了之后，才去执行下setLeader(null)并重新回到LOOKING的状态
+
+	![LEADING状态的操作](https://static.oschina.net/uploads/img/201508/17192344_IrLC.png "LEADING状态的操作")
+
+-	服务器的状态是FOLLOWING：则会创建出FollowerZooKeeperServer服务器，然后封装成Follower，调用follower的followLeader()方法，也是阻塞方法，只有当该集群中的Leader挂了之后，才去执行下setFollower(null)并重新回到LOOKING的状态
+
+	![FOLLOWING状态的操作](https://static.oschina.net/uploads/img/201508/17193633_14WL.png "FOLLOWING状态的操作")
+
+下面就来详细的看看各个角色的启动过程：
+
+##2.3 Leader启动过程
+
+首先是根据已有的配置信息创建出LeaderZooKeeperServer：
+
+![LeaderZooKeeperServer的创建](https://static.oschina.net/uploads/img/201508/17195445_cNd1.png "LeaderZooKeeperServer的创建")
+
+然后就是封装成Leader对象
+
+![封装成Leader对象](https://static.oschina.net/uploads/img/201508/17195754_2p5c.png "封装成Leader对象")
+
+Leader和LeaderZooKeeperServer各自的职责是什么呢？
+
+我们知道单机版使用的ZooKeeperServer不需要处理集群版中Follower与Leader之间的通信。ZooKeeperServer最主要的就是RequestProcessor处理器链、ZKDatabase、SessionTracker。这几部分是单机版和集群版服务器都共通的，主要不同的地方就是RequestProcessor处理器链的不同。所以LeaderZooKeeperServer、FollowerZooKeeperServer和ZooKeeperServer最主要的区别就是RequestProcessor处理器链。
+
+集群版还要负责处理Follower与Leader之间的通信，所以需要在LeaderZooKeeperServer和FollowerZooKeeperServer之外加入这部分内容。
+
+在Leader中加入ServerSocket负责等待Follower的socket连接，然后处理之间的通信。在Follower中加入Socket，负责去连接Leader，然后处理之间的通信。
+
+
+
+##2.4 Follower启动过程
+
 
 #3 集群版建立连接过程
