@@ -40,9 +40,21 @@
 
 		客户端代码在创建ZooKeeper对象的时候会给出一个sessionTimeout时间，而上述的minSessionTimeout和maxSessionTimeout就是用来约束客户端的sessionTimeout
 
--	initLimit：后面源码详细说明
+-	initLimit：在初始化阶段和Leader的通信的读取超时时间，即当调用socket的InputStream的read方法时最大阻塞时间不能超过initLimit*tickTime。设置如下：
 
--	syncLimit：后面源码详细说明
+	![initLimit读取超时时间](https://static.oschina.net/uploads/img/201508/17081952_dsWr.png "initLimit读取超时时间")
+
+	initLimit还会作为初始化阶段收集相关响应的总时间，一旦超过该时间，还没有过半的机器进行响应，则抛出InterruptedException的timeout异常
+
+-	syncLimit：在初始化阶段之后的请求阶段和Leader通信的读取超时时间，即对Leader的一次请求到响应的总时间不能超过syncLimit*tickTime时间。Follower和Leader之间的socket的超时时间初始化阶段是前者，当初始化完毕又设置到后者时间上。设置如下：
+
+	![syncLimit读取超时时间](https://static.oschina.net/uploads/img/201508/17082136_N8HO.png "syncLimit读取超时时间")
+
+	syncLimit还会作为与Leader的连接超时时间，如下：
+
+	![与Leader的连接超时时间](https://static.oschina.net/uploads/img/201508/17082447_RK1x.png "与Leader的连接超时时间")
+
+	
 
 -	dataDir:用于存储数据快照的目录
 
@@ -52,7 +64,7 @@
 
 -	maxClientCnxns值，用于指定服务器端最大的连接数。
 
--	集群的server配置，格式为server.A=B:C:D
+-	集群的server配置，一种格式为server.A=B:C:D，还有其他格式，具体可以去看QuorumPeerConfig源码解析这一块
 
 	A:即为集群中server的id标示，很多地方用到它，如选举过程中，就是通过id来识别是哪台服务器的投票。如初始化sessionId的时候，也用到id来防止sessionId出现重复。
 
@@ -82,6 +94,29 @@
 
 -	FileTxnSnapLog logFactory：通过dataDir和dataLogDir目录，用于事务日志记录和内存DataTree和session数据的快照。
 
--	
+-	Map<Long, QuorumServer> quorumPeers:QuorumServer包含ip、和Leader通信端口、选举端口即上述server.A=B:C:D的内容。而这里的key则是A,即server的id。这里的server不包含observers,即这里的server都是要参与投票的。
+
+-	int electionType：选举算法的类型。默认是3，采用的是FastLeaderElection选举算法。如下图
+
+	![创建选举算法的过程](https://static.oschina.net/uploads/img/201508/17070458_4lsW.png "创建选举算法的过程")
+
+	目前前三种选举算法都被标记为过时了，只保留了最后一种选举算法。具体的选举过程，后面单独拿出一篇博客来分析。目前的首要目标是把集群的启动过程简单弄清楚，然后理解在集群时，如何来处理请求的整个过程。
+
+-	long myid：就是本机器配置的id，即myid文件中写入的数字。
+
+-	int tickTime、minSessionTimeout、maxSessionTimeout：这几个参数在单机版的时候都讲过了。
+
+-	int initLimit、syncLimit：上面已经详细描述过了
+
+-	QuorumVerifier quorumConfig：用于验证是否过半机器已经认同了。默认采用的是QuorumMaj，即最简单的数量过半即可，不考虑权重问题
+
+-	ZKDatabase zkDb：即该服务器的内存数据库，最终还是会传递给ZooKeeperServer的子类。
+
+-	LearnerType：就两种，PARTICIPANT, OBSERVER。PARTICIPANT参与投票，可能成为Follower，也可能成为Leader。OBSERVER不参与投票，角色不会改变。
+
+
+然后就是启动QuorumPeer，之后阻塞主线程，启动过程如下：
+
+![QuorumPeer启动过程](https://static.oschina.net/uploads/img/201508/17084516_gCVp.png "QuorumPeer启动过程")
 
 #3 集群版建立连接过程
