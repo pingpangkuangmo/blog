@@ -164,7 +164,7 @@ QuorumPeer本身继承了Thread，在run方法中不断的检测当前服务器�
 
 下面就来详细的看看各个角色的启动过程：
 
-##2.3 Leader启动过程
+##2.3 Leader和Follower启动过程
 
 首先是根据已有的配置信息创建出LeaderZooKeeperServer：
 
@@ -178,13 +178,70 @@ Leader和LeaderZooKeeperServer各自的职责是什么呢？
 
 我们知道单机版使用的ZooKeeperServer不需要处理集群版中Follower与Leader之间的通信。ZooKeeperServer最主要的就是RequestProcessor处理器链、ZKDatabase、SessionTracker。这几部分是单机版和集群版服务器都共通的，主要不同的地方就是RequestProcessor处理器链的不同。所以LeaderZooKeeperServer、FollowerZooKeeperServer和ZooKeeperServer最主要的区别就是RequestProcessor处理器链。
 
-集群版还要负责处理Follower与Leader之间的通信，所以需要在LeaderZooKeeperServer和FollowerZooKeeperServer之外加入这部分内容。
+集群版还要负责处理Follower与Leader之间的通信，所以需要在LeaderZooKeeperServer和FollowerZooKeeperServer之外加入这部分内容。所以就有了Leader对LeaderZooKeeperServer等封装，Follower对FollowerZooKeeperServer的封装。前者加上加入ServerSocket负责等待Follower的socket连接，后者加入Socket负责去连接Leader。
 
-在Leader中加入ServerSocket负责等待Follower的socket连接，然后处理之间的通信。在Follower中加入Socket，负责去连接Leader，然后处理之间的通信。
+看下Leader处理socket连接的过程：
+
+![Leader处理socket连接的过程](https://static.oschina.net/uploads/img/201508/18072002_aPsR.png "Leader处理socket连接的过程")
+
+可以看到每来一个其他ZooKeeper服务器的socket连接，就会创建一个LearnerHandler，具体的处理逻辑就全部交给LearnerHandler了
+
+然后在LearnerHandler中就开始了Leader和Follower或者Observer的初始化同步过程，这个过程之后详细讲解。完成同步之后，LearnerHandler就进行循环过程，不断的读取来自Follower或者Observer的数据包，如下：
+
+	while (true) {
+        qp = new QuorumPacket();
+        ia.readRecord(qp, "packet");
+
+        switch (qp.getType()) {
+        case Leader.ACK:          
+            break;
+        case Leader.PING:          
+            break;
+        case Leader.REVALIDATE:        
+            break;
+        case Leader.REQUEST:                          
+            break;
+        default:
+            LOG.warn("unexpected quorum packet, type: {}", packetToString(qp));
+            break;
+        }
+    }
+
+LearnerHandler会接收来自Follower或者Observer的PING、Request请求等。PING请求，则需要重新计算所传递过来的sessionId的过期时间。事务请求则需要Follower或者Observer转发给Leader，该事务请求就是Leader.REQUEST类型。
+
+同时Follower也在不断接收来自Leader的数据包，处理如下：
 
 
 
-##2.4 Follower启动过程
+Leader在开启与Follower或者Observer同步的时候，同时在启动了本身的RequestProcessor处理器链，如下：
+
+![Leader的RequestProcessor处理器链](https://static.oschina.net/uploads/img/201508/18074408_kKAK.png "Leader的RequestProcessor处理器链")
+
+PrepRequestProcessor-》ProposalRequestProcessor-》CommitProcessor-》ToBeAppliedRequestProcessor-》FinalRequestProcessor
+
+ProposalRequestProcessor-》SyncRequestProcessor-》AckRequestProcessor
+
+再来看看Follower的处理器链
+
+![Follower的RequestProcessor处理器链](https://static.oschina.net/uploads/img/201508/18074933_sYeI.png "Follower的RequestProcessor处理器链")
+
+FollowerRequestProcessor-》CommitProcessor-》FinalRequestProcessor
+
+SyncRequestProcessor-》SendAckRequestProcessor
+
+接下来就是需要详细的看看这些处理器链
+
+##2.4 Leader和Follower的RequestProcessor处理器链
+
+###2.4.1 Follower的FollowerRequestProcessor处理器
+
+先来看下具体的处理过程：
+
+![FollowerRequestProcessor处理过程](https://static.oschina.net/uploads/img/201508/18080216_Uuq4.png "FollowerRequestProcessor处理过程")
+
+对于一个请求，先交给下一个处理器来处理，如果请求是事务请求，还要将该请求转发给Leader。zks.getFollower().request(request)即通过上述Leader与Follower的tcp连接发送给Leader，最终会在上述LearnerHandler中出现。
+
+由于FollowerRequestProcessor的下一个处理器是CommitProcessor（是一个线程），nextProcessor.processRequest(request)这个操作仅仅是把request放入等待处理的队列中，然后就返回了，执行下面的代码，将事务请求转发给Leader。
 
 
 #3 集群版建立连接过程
