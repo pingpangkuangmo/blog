@@ -176,7 +176,7 @@ QuorumPeer本身继承了Thread，在run方法中不断的检测当前服务器�
 
 Leader和LeaderZooKeeperServer各自的职责是什么呢？
 
-我们知道单机版使用的ZooKeeperServer不需要处理集群版中Follower与Leader之间的通信。ZooKeeperServer最主要的就是RequestProcessor处理器链、ZKDatabase、SessionTracker。这几部分是单机版和集群版服务器都共通的，主要不同的地方就是RequestProcessor处理器链的不同。所以LeaderZooKeeperServer、FollowerZooKeeperServer和ZooKeeperServer最主要的区别就是RequestProcessor处理器链。
+我们知道单机版使用的ZooKeeperServer不需要处理集群版中Follower与Leader之间的通信。ZooKeeperServer最主要的就是RequestProcessor处理器链、ZKDatabase、SessionTracker(只是实现不一样)。这几部分是单机版和集群版服务器都共通的，主要不同的地方就是RequestProcessor处理器链的不同。所以LeaderZooKeeperServer、FollowerZooKeeperServer和ZooKeeperServer最主要的区别就是RequestProcessor处理器链。
 
 集群版还要负责处理Follower与Leader之间的通信，所以需要在LeaderZooKeeperServer和FollowerZooKeeperServer之外加入这部分内容。所以就有了Leader对LeaderZooKeeperServer等封装，Follower对FollowerZooKeeperServer的封装。前者加上加入ServerSocket负责等待Follower的socket连接，后者加入Socket负责去连接Leader。
 
@@ -211,7 +211,7 @@ LearnerHandler会接收来自Follower或者Observer的PING、Request请求等。
 
 同时Follower也在不断接收来自Leader的数据包，处理如下：
 
-
+![Follower处理与Leader的通信](https://static.oschina.net/uploads/img/201508/19071238_SBMI.png "Follower处理与Leader的通信")
 
 Leader在开启与Follower或者Observer同步的时候，同时在启动了本身的RequestProcessor处理器链，如下：
 
@@ -242,6 +242,71 @@ SyncRequestProcessor-》SendAckRequestProcessor
 对于一个请求，先交给下一个处理器来处理，如果请求是事务请求，还要将该请求转发给Leader。zks.getFollower().request(request)即通过上述Leader与Follower的tcp连接发送给Leader，最终会在上述LearnerHandler中出现。
 
 由于FollowerRequestProcessor的下一个处理器是CommitProcessor（是一个线程），nextProcessor.processRequest(request)这个操作仅仅是把request放入等待处理的队列中，然后就返回了，执行下面的代码，将事务请求转发给Leader。
+
+###2.4.2 Follower的CommitProcessor处理器
+
+FollowerRequestProcessor把请求交给了CommitProcessor，看下CommitProcessor的整个处理流程
+
+![CommitProcessor的属性](https://static.oschina.net/uploads/img/201508/19072222_j5kF.png "CommitProcessor的属性")
+
+CommitProcessor有三个重要属性：
+
+-	LinkedList<Request> queuedRequests：用于存放FollowerRequestProcessor提交的请求
+
+-	LinkedList<Request> committedRequests：用于存放Leader对该Follower下达的commit请求。我们知道一旦是事务请求就会转发给Leader，需要Leader把这个请求下发给所有的Follower进行投票，如果过半数达成一致，才认为该请求可以通过，即是可以commit的请求，此时Leader又会下发commit命令，让Follower去执行commit。Follower就是在上述Follower与Leader通信模块中接收到该请求，然后存放至CommitProcessor的committedRequests中的。
+
+-	ArrayList<Request> toProcess：需要被下一个处理器处理的请求，可以来自committedRequests，如果是非事务请求不会经过committedRequests，直接到达toProcess中。
+
+具体的处理逻辑如下：
+
+![CommitProcessor处理逻辑1](https://static.oschina.net/uploads/img/201508/19073408_KnDD.png "CommitProcessor处理逻辑1")
+
+![CommitProcessor处理逻辑2](https://static.oschina.net/uploads/img/201508/19073714_hsOS.png "CommitProcessor处理逻辑2")
+
+先解释下nextPending：即等待被处理的事务请求，注意一定是事务请求。
+
+-	第一步：先把toProcess中的请求交给下一个处理器来处理，然后清空toProcess
+
+-	第二步：如果queuedRequests列表为空，但是当前有等待被处理的事务。即是这样的场景：FollowerRequestProcessor向queuedRequests中提交了一个事务请求，然后改事务请求作为了下一个等待被处理的事务请求即nextPending，然后从queuedRequests中删除，同时FollowerRequestProcessor将该事务请求转发给Leader，但是此时Leader还没有判定该请求是否能够被提交，即还未向Follower发送commit该请求的操作，即CommitProcessor中的committedRequests为空，此时Follower要做的事情就是等待Leader向它的committedRequests中发送判定结果。
+
+-	第三步：如果CommitProcessor中的committedRequests不为空，即Leader向该Follower发送了相关的提交请求。则拿出第一个需要commit的请求，验证下当前需要被处理的事务请求是不是和刚才拿出的请求是不是同一个请求，如果是同一个请求，则替换nextPending中的部分数据，同时存放至toProcess，等待被下一个处理器来处理。同时交出nextPending位置，等待下一个事务请求来占用。
+
+-	第四步：如果和nextPending不是同一个请求，则直接存放至toProcess，等待被下一个处理器来处理。其他一切不变
+
+-	第五步：判断当前是否有等待被处理的事务请求，即nextPending是否为空，如果不为空则continue，不执行下面的第6步和第7步操作。是为了保证请求都能够被顺序处理，前面一个没处理完，后面的请求不能被处理
+
+-	第六步：能够走到第6步，说明nextPending已经为null了，然后从queuedRequests中取出一个请求，如果是事务请求，则把nextPending的位置占住
+
+-	第七步：如果不是事务请求，则直接存放至toProcess，等待被下一个处理器来处理
+
+
+其实到这里，一旦是事务请求，就会被阻塞在这里，等待Leader的决定。那接下来我们就去看看Leader是如何处理Follower转发过来的请求的。我们就以创建session为例。
+
+上面说过了，Leader会为每一个Follower创建一个LearnerHandler，来处理与该Follower的通信，对于Follower转发的请求，处理如下：
+
+![LearnerHandler接收到来自对应Follower的请求](https://static.oschina.net/uploads/img/201508/19080908_nbn3.png "LearnerHandler接收到来自对应Follower的请求")
+
+先还原成一个Request，然后为该Request设置owner，this即LearnerHandler。然后就把该请求交给了Leader的请求处理器链，Leader的第一个请求处理器是PrepRequestProcessor
+
+###2.4.2 Leader的PrepRequestProcessor处理器
+
+这个处理器我们在ZooKeeper单机版的时候详细讲解过了，见[PrepRequestProcessor处理器](http://my.oschina.net/pingpangkuangmo/blog/491673#OSC_h3_7)
+
+这里需要提前说明下，当客户端发送请求给Follower的时候，这时候先使用Follower的LearnerSessionTracker为该创建session的请求分配了sessionId，同时给定了sessionTimeout时间。但是并没有在Follower本地保留任何信息。
+
+来看下PrepRequestProcessor对于创建session的处理
+
+![PrepRequestProcessor对创建session的处理](https://static.oschina.net/uploads/img/201508/19082703_9uxF.png "PrepRequestProcessor对创建session的处理")
+
+根据请求的sessionId和sessionTimeout时间在Leader中使用SessionTrackerImpl创建出一个session。这一部分在单机版的时候已经详细描述过了，这里不再说明。然后设置该session的owner是上述提到过的LearnerHandler，代表了某个Follower。
+
+至此就在Leader中创建出了session。
+
+然后继续下一个处理器ProposalRequestProcessor
+
+
+###2.4.2 Leader的ProposalRequestProcessor处理器
+
 
 
 #3 集群版建立连接过程
