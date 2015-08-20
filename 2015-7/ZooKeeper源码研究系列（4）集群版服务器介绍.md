@@ -3,6 +3,7 @@
 -	[ZooKeeper源码研究系列（1）源码环境搭建](http://my.oschina.net/pingpangkuangmo/blog/484955)
 -	[ZooKeeper源码研究系列（2）客户端创建连接过程分析](http://my.oschina.net/pingpangkuangmo/blog/486780)
 -	[ZooKeeper源码研究系列（3）单机版服务器介绍](http://my.oschina.net/pingpangkuangmo/blog/491673)
+-	[ZooKeeper源码研究系列（4）集群版建立连接和更新数据过程]()
 
 #2 集群版服务器启动过程
 
@@ -378,3 +379,14 @@ Follower对客户端创建session的请求执行上述响应，从而整个集�
 ![Leader的ToBeAppliedRequestProcessor处理器](https://static.oschina.net/uploads/img/201508/20084607_6zkC.png "Leader的ToBeAppliedRequestProcessor处理器")
 
 就是把请求交给下一个处理器即FinalRequestProcessor，同时从之前的决议队列中取出然后删除。
+
+#3 结束语
+
+本篇文章贴代码形式地介绍了Leader和Follower的请求处理器以及他们通信的过程。下一篇文章就纯理论地介绍如下过程
+
+-	1 连接Leader建立session关联的过程，以及session不断激活的过程
+-	2 连接Follower建立session关联的过程，以及session不断激激活的过程
+-	3 连接Observer建立session关联的过程，以及session不断激激活的过程
+-	4 连接Leader，setData的过程
+-	5 连接Follower，setData的过程
+-	6 连接Observer，setData的过程
