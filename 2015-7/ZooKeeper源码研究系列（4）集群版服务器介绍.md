@@ -288,7 +288,7 @@ CommitProcessor有三个重要属性：
 
 先还原成一个Request，然后为该Request设置owner，this即LearnerHandler。然后就把该请求交给了Leader的请求处理器链，Leader的第一个请求处理器是PrepRequestProcessor
 
-###2.4.2 Leader的PrepRequestProcessor处理器
+###2.4.3 Leader的PrepRequestProcessor处理器
 
 这个处理器我们在ZooKeeper单机版的时候详细讲解过了，见[PrepRequestProcessor处理器](http://my.oschina.net/pingpangkuangmo/blog/491673#OSC_h3_7)
 
@@ -305,8 +305,76 @@ CommitProcessor有三个重要属性：
 然后继续下一个处理器ProposalRequestProcessor
 
 
-###2.4.2 Leader的ProposalRequestProcessor处理器
+###2.4.4 Leader的ProposalRequestProcessor处理器
+
+处理过程如下：
+
+![ProposalRequestProcessor处理过程](https://static.oschina.net/uploads/img/201508/20072430_YVq3.png "ProposalRequestProcessor处理过程")
+
+-	第一步：交给下一个处理器来处理，下一个处理器是CommitProcessor，我们知道会阻塞在那里
+-	第二步：如果请求是事务请求的话，则根据该请求创建出一份议案，发给所有的Learner（即Follower和Observer）
+-	第三步：同时记录该事务请求到事务日志文件中
+
+来详细看下第二步如何发出议案：
+
+![根据请求发出议案](https://static.oschina.net/uploads/img/201508/20073355_qKEO.png "根据请求发出议案")
+
+可以看到就是根据request的内容，构建了一个QuorumPacket包，然后发送给所有的Follower，同时对QuorumPacket进行包装，创建出Proposal议案，存至ConcurrentMap<Long, Proposal> outstandingProposals结构中，key就是请求的zxid。
+
+Follower接收到之后该如何处理呢？
+
+![Follower处理来自Leader的Proposal类型的数据包](https://static.oschina.net/uploads/img/201508/20073931_0yBW.png "Follower处理来自Leader的Proposal类型的数据包")
+
+![logRequest内容](https://static.oschina.net/uploads/img/201508/20074212_xXzm.png "logRequest内容")
+
+可以看到Follower的处理就是把该请求交给了SyncRequestProcessor，它会把事务请求记录到日志中去，同时交给下一个处理器来处理。Follower的SyncRequestProcessor下一个处理器是SendAckRequestProcessor，来看下它又是如何来处理的呢？
+
+![Follower的SendAckRequestProcessor](https://static.oschina.net/uploads/img/201508/20074546_HnI0.png "Follower的SendAckRequestProcessor")
+
+仅仅就是向Leader回复一个Leader.ACK的响应包，表明本Follower已完成事务请求的记录。
+
+再回到Leader的ProposalRequestProcessor处理器，然后来详细看下上述第三步中记录到事务日志文件中的内容：
+
+同样是利用SyncRequestProcessor把事务请求记录到事务日志文件中，然后交给下一个处理器来处理，Leader的下一个处理AckRequestProcessor，如下：
+
+![Leader的ACK响应](https://static.oschina.net/uploads/img/201508/20075645_rmn4.png "Leader的ACK响应")
 
 
+其他的Follower在记录完事务请求后，都使用SendAckRequestProcessor向Leader发送一个应答响应，Leader自己在记录完事务请求后，也需要一个应答，只是不用发送数据包了，直接调用，响应方法leader.processAck，其实Leader在接收到其他Follower发送的Leader.ACK的响应包，也会调用该方法进行处理，如下：
 
-#3 集群版建立连接过程
+![LearnerHandler对ACK的处理](https://static.oschina.net/uploads/img/201508/20075954_vEng.png "LearnerHandler对ACK的处理")
+
+具体的处理过程就是：
+
+![Leader处理ACK响应的过程](https://static.oschina.net/uploads/img/201508/20081047_pW1h.png "Leader处理ACK响应的过程")
+
+-	第一步：根据zxid从Leader的ConcurrentMap<Long, Proposal> outstandingProposals取出议案
+
+-	第二步：记录该议案的已经响应的Follower数量
+
+-	第三步：然后判决数量是不是已经过半？
+
+-	第四步：如果过半，则将该决议存至ConcurrentLinkedQueue<Proposal> toBeApplied结构中，作为历史备份，一旦某个决议被真正执行了，就从中删除。
+
+-	第五、六步：向所有的Follower和Observer发送一个commit请求包，因为此时Follower和Observer都处于阻塞状态（也不一定）等待Leader的commit数据包。两者的主要区别是，Leader之前已经向Follower发送过请求的具体内容，这次commit就不需要再完整的发送整个请求内容了，而Observer之前没有收到这个提案，不知道有这个请求，所以需要把整个请求数据全发给Observer。
+
+-	第七步：由于Leader本身也阻塞在CommitProcessor，所以需要给自己的CommitProcessor中加入之前的请求。
+
+对于连接Follower创建session来说，Leader发送的Commit请求到达Follower之后，该请求就可以在Follower中继续走下去，即走到了Follower的最后一个处理器FinalRequestProcessor，之前就详细说过了
+
+![对客户端的创建session请求进行响应](https://static.oschina.net/uploads/img/201508/20082556_h7nz.png "对客户端的创建session请求进行响应")
+
+Follower对客户端创建session的请求执行上述响应，从而整个集群版的连接过程就建立起来了。
+
+再说说具体的细节问题，其他的Follower和Observer都接收到了Leader发来的commit请求，他们该如何来处理呢？对于创建session来说，他们其实都不需要做什么，那这个request又是如何被处理掉的呢？
+
+![处理不属于自己的请求](https://static.oschina.net/uploads/img/201508/20083201_N0oB.png "处理不属于自己的请求")
+
+在FinalRequestProcessor中会做这样的一个判断，即判断该请求是否有ServerCnxn，如果是客户端连接的那台Follower，必然会有ServerCnxn，而其他Follower和Observer接收到的请求是从Leader过来的，就没有ServerCnxn，所以就被过滤掉了，不用执行。
+
+
+###2.4.5 Leader的ToBeAppliedRequestProcessor处理器
+
+![Leader的ToBeAppliedRequestProcessor处理器](https://static.oschina.net/uploads/img/201508/20084607_6zkC.png "Leader的ToBeAppliedRequestProcessor处理器")
+
+就是把请求交给下一个处理器即FinalRequestProcessor，同时从之前的决议队列中取出然后删除。
