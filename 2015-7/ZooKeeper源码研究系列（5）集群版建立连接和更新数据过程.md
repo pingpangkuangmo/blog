@@ -139,11 +139,13 @@ SyncRequestProcessor
 
 	-	2.1 在交给请求处理器之前，进行了session的激活操作。
 
-		SessionTrackerImpl的session对于session超时检查，是进行的分桶策略。以tickTime的整数倍的时间点就是一个桶，存放着在该时间点过期的session。
+		SessionTrackerImpl对于session超时检查，是进行的分桶策略。以tickTime的整数倍的时间点就是一个桶，存放着在该时间点过期的session。
 
-		SessionTrackerImpl会每隔tickTime时间就会执行一次session检查，只需要查看当前时间点对应的桶中是否含有session，如果有则表示该session没有被及时激活，需要进行过期操作
+		session被激活的过程就是从某个tickTime的整数倍的时间点对应的桶中移到后面时间点对应的桶中
+
+		SessionTrackerImpl会每隔tickTime时间就会执行一次session过期检查，有了分桶策略就比较方便了，不用遍历每个session执行检查，只需要查看当前时间点对应的桶中是否含有session，如果有则表示该session没有被及时激活，需要进行过期操作。
 		
-		session的激活就是先检查当前session是否过期，如果没有过期，则重新计算session的过期时间，计算方式就是当前时间加上sessionTimeout时间然后取一个tickTime的整数值。
+		session的激活就是先检查当前session是否过期，如果没有过期，则重新计算session的过期时间，计算方式就是当前时间加上sessionTimeout时间然后取一个tickTime的整数值，即选择了后面的一个桶进行存放该session。
 
 	-	2.2 首先是Leader的PrepRequestProcessor处理器：发现该请求是Ping请求，不会创建事务请求体，只会检查下session是否过期。然后交给下一个处理器ProposalRequestProcessor
 
@@ -153,7 +155,19 @@ SyncRequestProcessor
 
 	-	2.5 ToBeAppliedRequestProcessor也没有做什么处理，直接交给下一个处理器FinalRequestProcessor
 
-	-	2.6 FinalRequestProcessor针对ping请求，直接进行响应
+	-	2.6 FinalRequestProcessor针对ping请求，直接进行响应即可。
+
+-	3 客户端：客户端在接收到服务器端返回的ping响应之后也不做什么操作。
+
+可以看到当客户端连接的是Leader服务器时，session的不断激活就是通过客户端不断发送Ping请求给Leader服务器端，重新计算session过期时间达到激活session的目的。可以看到Follower、Observer都不参与此过程，然而当客户端连接的不是Leader服务器端，就不一样了，过程就没这么简单了。后面详细说明
+
+##3.3 session过期过程
+
+一旦Leader发现某个session过期了，会先从Leader中删除该session，然后创建一个OpCode.closeSession请求，提交到Leader的请求处理器链
+
+-	1.1 首先是Leader的PrepRequestProcessor处理器，发现session过期是一个事务请求，创建出事务请求头。然后设置该session的isClosing属性为true,然后交给下一个处理器ProposalRequestProcessor
+
+-	1.2 ProposalRequestProcessor处理器先把该请求交给下一个处理器CommitProcessor，由于该请求是事务请求，则针对该请求提出一个议案
 
 #4 连接Follower建立session关联的过程和session不断激活的过程
 #5 连接Observer建立session关联的过程和session不断激活的过程
