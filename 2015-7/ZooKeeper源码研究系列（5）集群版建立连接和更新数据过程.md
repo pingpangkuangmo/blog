@@ -70,11 +70,13 @@ SyncRequestProcessor
 
 #3 连接Leader建立session关联的过程和session不断激活的过程
 
-这里连接的服务器以Leader为例
+这里连接的服务器以Leader为例，先说建立session关联的过程，之后再说session不断激活的过程
+
+##3.1 建立session关联的过程
 
 这就需要从用户创建ZooKeeper对象开始说起。
 
--	1 用户创建ZooKeeper对象，内部创建出ClientCnxn，可以简单想象成ZooKeeper对象的内部管家，ClientCnxn有两个主要的线程SendThread和EventThread
+-	1 客户端： 用户创建ZooKeeper对象，内部创建出ClientCnxn，可以简单想象成ZooKeeper对象的内部管家，ClientCnxn有两个主要的线程SendThread和EventThread
 
 	SendThread负责与服务器端的通信，EventThread负责事件的通知。
 
@@ -82,7 +84,7 @@ SyncRequestProcessor
 
 	-	1.2 当tcp连接连接成功之后，就需要和服务器端建立session关联。依托tcp连接，向服务器端发送ConnectRequest请求，会把创建ZooKeeper对象时指定的sessionTimeout时间带上
 
--	2 客户端一旦和服务器端建立tcp连接之后，服务器端会给客户端创建一个ServerCnxn，专门负责与该客户端的通信
+-	2 Leader服务器端： 一旦和服务器端建立tcp连接之后，服务器端会给客户端创建一个ServerCnxn，专门负责与该客户端的通信
 
 	-	2.1 当客户端第一次发送ConnectRequest请求到ServerCnxn中，ServerCnxn首先会对tcp连接传递过来的数据序列化成ConnectRequest，拿到客户端传递的sessionTimeout时间，由于服务器端在启动的时候指定了maxSessionTimeout、minSessionTimeout（即使没有指定，也会使用默认的），要求客户端传递过来的sessionTimeout时间必须在此两者之间，不符合要求的分别取对应的最大值或者最小值
 	
@@ -90,9 +92,71 @@ SyncRequestProcessor
 
 	-	2.3 根据分配的sessionId和刚才的ServerCnxn创建出一个请求，类型为OpCode.createSession，将该请求提交到Leader的请求处理器链上
 
-	-	2.4 首先遇到的是PrepRequestProcessor处理器，认为OpCode.createSession请求是一个事务请求，就创建了一个事务请求体，
-#4 连接Follower建立session关联的过程和session不断激激活的过程
-#5 连接Observer建立session关联的过程和session不断激激活的过程
+	-	2.4 首先遇到的是PrepRequestProcessor处理器，认为OpCode.createSession请求是一个事务请求，就创建了一个事务请求体，再次执行了session的添加操作，主要是作用于从Follower等转发过来的创建session的请求。放心不会进行重复添加的，里面进行来判断的。
+
+	-	2.5 PrepRequestProcessor处理器执行完毕，交给下一个处理器ProposalRequestProcessor。ProposalRequestProcessor处理器将该创建session的请求立马交给了下一个处理器CommitProcessor的处理队列中（该请求被阻塞在那），然后又立马返回将该请求封装成一个议案，发送给所有的Follower服务器
+
+	-	2.6 Follower服务器接收到Leader发过来的议案后，使用SyncRequestProcessor将该请求即创建session的请求记录到事务日志中，然后交给Follower的下一个处理器SendAckRequestProcessor，使用该处理向Leader发送Leader.ACK反馈
+
+	-	2.7 每收到Follower的一次Leader.ACK反馈，就要统计下是否已经过半数了，如果过半数，则Leader向所有的Follower发送Leader.COMMIT命令，带上之前的请求号，向所有的Observer发送Leader.INFORM命令，需要带上之前的整个请求内容。同时Leader也向自己的CommitProcessor提交创建session的请求，CommitProcessor拿到该请求后，不再阻塞，继续走向下一个处理器ToBeAppliedRequestProcessor
+
+	-	2.8 ToBeAppliedRequestProcessor将创建session的请求先交给下一个处理器FinalRequestProcessor处理，当FinalRequestProcessor处理完成之后，删除之前提出的针对该请求的议案
+
+	-	2.9 FinalRequestProcessor针对创建session的请求，会使用SessionTracker再次执行创建（不会重复的，内部进行了判断，一旦已经有了sessionId对应的session则只需要查看是否过期，如果没有过期则重新激活session，即重新计算session的过期时间）。然后就Leader从request中取出ServerCnxn，开始准备向客户端发送响应了。响应内容是sessionId、根据sessionId计算出来的密码、协商后的sessionTimeout时间
+
+	-	2.10 虽然上述Leader已经对客户端进行了响应，但是其他Follower和Observer接收到Leader发送的Leader.COMMIT命令和Leader.INFORM命令，他们接收到上述命令之后，也都从CommitProcessor中走出来了，不再阻塞在那里，走向了FinalRequestProcessor。仍然使用SessionTracker再次执行创建session的操作，但是Follower和Observer中的SessionTracker实现是LearnerSessionTracker，而Leader中的SessionTracker是SessionTrackerImpl。
+
+		session已经在Leader内部创建出来了，其他的Follower、Observer仅仅是保存下sessionId和sessionTimeout时间，并没有完整的session对象。
+
+		所谓的session在所有机器上共享，其实就是Leader中保存着所有的session信息，并负责检查session的过期。其他机器只负责简单保存下sessionId以及对应的sessionTimeout时间，对于session问题下面再详细说明。
+
+		FinalRequestProcessor执行完session添加之后，也从request中取出对应的ServerCnxn，当然为null，然后就不执行任何操作。只有客户端所连接的那台服务器才会有ServerCnxn
+
+-	3 客户端： 当客户端收到服务器端的创建session的响应之后，首先判断服务器端返回的sessionTimeout时间是否小于等于0
+		
+	如果小于等于0则表示session创建失败。向EventThread中发送两个事件，第一个事件是KeeperState.Expired类型的事件，即session过期事件。第二个事件是eventOfDeath死亡事件，当EventThread收到eventOfDeath事件后，就会结束EventThread线程循环，EventThread线程走向死亡，即ZooKeeper对象不再可用。
+
+	如果大于0则表示创建session成功。向EventThread中发送一个KeeperState.SyncConnected事件
+
+
+##3.2 session不断激活的过程
+
+上面说完了建立session关联的过程，下面就说说session是如何不断的激活的
+
+因为服务器端，Leader服务器的SessionTrackerImpl，会每隔tickTime时间就会执行一次session过期检查，如果session没有及时激活的话，就会过期，就会被SessionTrackerImpl清理掉，对应的客户端ZooKeeper对象就不可用了。
+
+-	1 客户端：客户端的SendThread线程在循环过程中，不断的向服务器端发送Ping请求。操作类型为OpCode.ping
+
+	对于发送频率，先说明下。
+
+	-	lastSend:客户端向服务器端最后一次发送请求的时间
+	-	idleSend:lastSend时间到当前时间的间隔
+	-	readTimeout：客户端的读超时时间，取值是2/3的sessionTimeout时间
+
+	SendThread在循环过程中发现idleSend时间已经超过了readTimeout的一半了，或者idleSend时间已经超过10s，就会执行一次发送Ping请求。
+
+-	2 Leader服务器端：为该客户端分配的ServerCnxn接收到客户端的请求后，先将请求封装成一个Request对象，并设置该请求的owner指向ServerCnxn中的Object me标志。然后提交该请求到Leader的请求处理器链
+
+	-	2.1 在交给请求处理器之前，进行了session的激活操作。
+
+		SessionTrackerImpl的session对于session超时检查，是进行的分桶策略。以tickTime的整数倍的时间点就是一个桶，存放着在该时间点过期的session。
+
+		SessionTrackerImpl会每隔tickTime时间就会执行一次session检查，只需要查看当前时间点对应的桶中是否含有session，如果有则表示该session没有被及时激活，需要进行过期操作
+		
+		session的激活就是先检查当前session是否过期，如果没有过期，则重新计算session的过期时间，计算方式就是当前时间加上sessionTimeout时间然后取一个tickTime的整数值。
+
+	-	2.2 首先是Leader的PrepRequestProcessor处理器：发现该请求是Ping请求，不会创建事务请求体，只会检查下session是否过期。然后交给下一个处理器ProposalRequestProcessor
+
+	-	2.3 ProposalRequestProcessor对于非事务请求也仅仅是直接交给下一个处理器CommitProcessor
+
+	-	2.4 CommitProcessor中如果没有正在等待处理的事务请求，则会直接交给下一个处理器ToBeAppliedRequestProcessor。如果有正在被处理的事务请求，则也需要进行等待，感觉这里不是太合理，Ping类型的请求，应该直接通过，不经过任何等待的。
+
+	-	2.5 ToBeAppliedRequestProcessor也没有做什么处理，直接交给下一个处理器FinalRequestProcessor
+
+	-	2.6 FinalRequestProcessor针对ping请求，直接进行响应
+
+#4 连接Follower建立session关联的过程和session不断激活的过程
+#5 连接Observer建立session关联的过程和session不断激活的过程
 #6 连接Leader执行setData的过程
 #7 连接Follower执行setData的过程
 #8 连接Observer执行setData的过程
