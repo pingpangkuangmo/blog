@@ -4,6 +4,7 @@
 -	[ZooKeeper源码研究系列（2）客户端创建连接过程分析](http://my.oschina.net/pingpangkuangmo/blog/486780)
 -	[ZooKeeper源码研究系列（3）单机版服务器介绍](http://my.oschina.net/pingpangkuangmo/blog/491673)
 -	[ZooKeeper源码研究系列（4）集群版服务器介绍](http://my.oschina.net/pingpangkuangmo/blog/495311)
+-	[ZooKeeper源码研究系列（5）集群版建立连接过程](http://my.oschina.net/pingpangkuangmo/blog/496136)
 
 #2 集群版服务器启动过程
 
