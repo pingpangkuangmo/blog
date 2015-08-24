@@ -6,7 +6,6 @@
 -	[ZooKeeper源码研究系列（4）集群版服务器介绍](http://my.oschina.net/pingpangkuangmo/blog/495311)
 -	[ZooKeeper源码研究系列（5）集群版建立连接过程](http://my.oschina.net/pingpangkuangmo/blog/496136)
 
-
 #2 两将军问题
 
 #3 拜占庭将军问题
