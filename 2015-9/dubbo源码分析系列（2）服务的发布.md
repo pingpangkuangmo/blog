@@ -86,7 +86,7 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
 	
 	}
 
-给出的BeanDefinitionParser全部是DubboBeanDefinitionParser，如果我们先看看<dubbo:registry>是怎么解析的，就可以去看看DubboBeanDefinitionParser的源代码。
+给出的BeanDefinitionParser全部是DubboBeanDefinitionParser，如果我们想看看<dubbo:registry>是怎么解析的，就可以去看看DubboBeanDefinitionParser的源代码。
 
 而dubbo的jar包下，存在着META-INF/spring.handlers文件，内容如下：
 
@@ -103,7 +103,7 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
 -	service对应ServiceConfig
 -	reference对应ReferenceConfig
 
-上面的bean不依赖Spring
+上面的对象不依赖Spring，也就是说你可以手动去创建上述对象。
 
 为了在Spring启动的时候，也相应的启动provider发布服务注册服务的过程：又加入了一个和Spring相关联的ServiceBean，继承了ServiceConfig
 
@@ -113,9 +113,11 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
 
 #3 服务的发布与注册过程
 
+##3.1 案例介绍
+
 从上面知道，利用Spring的解析收集到很多一些配置，然后将这些配置都存至ServiceConfig中，然后调用ServiceConfig的export()方法来进行服务的发布与注册
 
-先看一个简单的例子，dubbo配置如下：
+先看一个简单的服务端例子，dubbo配置如下：
 
 	<dubbo:application name="helloService-app" />
    
@@ -124,6 +126,41 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
    	<dubbo:service interface="com.demo.dubbo.service.HelloService" ref="helloService" />
    
    	<bean id="helloService" class="com.demo.dubbo.server.serviceimpl.HelloServiceImpl"/>
+
+
+-	有一个服务接口，HelloService，以及它对应的实现类HelloServiceImpl
+-	将HelloService标记为dubbo服务，使用HelloServiceImpl对象来提供具体的服务
+-	使用zooKeeper作为注册中心
+
+##3.2 服务发布过程
+
+一个服务可以有多个注册中心、多个服务协议
+
+多注册中心信息：
+
+首选根据注册中心配置，即上述的ZooKeeper配置信息，将注册信息聚合在一个URL对象中，registryURLs内容如下：
+
+	[registry://192.168.1.104:2181/com.alibaba.dubbo.registry.RegistryService?application=helloService-app&localhost=true&registry=zookeeper]
+
+多协议信息：
+
+由于上述我们没有配置任何协议信息，就会使用默认的dubbo协议，开放在20880端口，也就是在该端口，对外提供上述的HelloService服务，注册的协议信息也转化成一个URL对象，如下:
+
+	dubbo://192.168.1.104:20880/com.demo.dubbo.service.HelloService?anyhost=true&application=helloService-app&dubbo=2.0.13&interface=com.demo.dubbo.service.HelloService&methods=hello&prompt=dubbo&revision=
+
+依据注册中心信息和协议信息的组合，依次来进行服务的发布。整个过程如下：
+
+	Invoker<?> invoker = proxyFactory.getInvoker(ref, (Class) interfaceClass, registryURL.addParameterAndEncoded(RpcConstants.EXPORT_KEY, providerURL));
+    Exporter<?> exporter = protocol.export(invoker);
+    exporters.add(exporter);
+
+这里面就涉及到三个大的概念。ProxyFactory、Invoker、Protocol、Exporter。
+
+Invoker： 
+
+
+
+
 
 
 
