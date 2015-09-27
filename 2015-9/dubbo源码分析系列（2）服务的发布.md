@@ -148,15 +148,93 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
 
 	dubbo://192.168.1.104:20880/com.demo.dubbo.service.HelloService?anyhost=true&application=helloService-app&dubbo=2.0.13&interface=com.demo.dubbo.service.HelloService&methods=hello&prompt=dubbo&revision=
 
-依据注册中心信息和协议信息的组合，依次来进行服务的发布。整个过程如下：
+依据注册中心信息和协议信息的组合起来，依次来进行服务的发布。整个过程伪代码如下：
 
-	Invoker<?> invoker = proxyFactory.getInvoker(ref, (Class) interfaceClass, registryURL.addParameterAndEncoded(RpcConstants.EXPORT_KEY, providerURL));
-    Exporter<?> exporter = protocol.export(invoker);
-    exporters.add(exporter);
+	List<URL> registryURLs = loadRegistries();
+    for (ProtocolConfig protocolConfig : protocols) {
+		//根据每一个协议配置构建一个URL
+		URL url = new URL(name, host, port, (contextPath == null || contextPath.length() == 0 ? "" : contextPath + "/") + path, map);		
+		for (URL registryURL : registryURLs) {
+            String providerURL = url.toFullString();
+            Invoker<?> invoker = proxyFactory.getInvoker(ref, (Class) interfaceClass, registryURL.addParameterAndEncoded(RpcConstants.EXPORT_KEY, providerURL));
+            Exporter<?> exporter = protocol.export(invoker);
+        }
+	}
 
-这里面就涉及到三个大的概念。ProxyFactory、Invoker、Protocol、Exporter。
+这里面就涉及到几个大的概念。ProxyFactory、Invoker、Protocol、Exporter。下面来一一介绍
 
-Invoker： 
+##3.3 概念介绍
+
+分别介绍下Invoker、ProxyFactory、Protocol、Exporter的概念
+
+###3.3.1 Invoker概念
+
+Invoker： 一个可执行的对象，能够根据方法名称、参数得到相应的执行结果。接口内容简略如下：
+
+	public interface Invoker<T> {
+
+	    Class<T> getInterface();
+	
+	    URL getUrl();
+	    
+	    Result invoke(Invocation invocation) throws RpcException;
+	
+	}
+
+而Invocation则包含了需要执行的方法、参数等信息，接口定义简略如下：
+
+	public interface Invocation {
+  
+	    URL getUrl();
+	    
+		String getMethodName();
+	
+		Class<?>[] getParameterTypes();
+	
+		Object[] getArguments();
+	
+	}
+
+目前其实现类只有一个RpcInvocation。内容大致如下：
+
+	public class RpcInvocation implements Invocation, Serializable {
+	
+	    private String              methodName;
+	
+	    private Class<?>[]          parameterTypes;
+	
+	    private Object[]            arguments;
+	
+	    private transient URL       url;
+	}
+
+仅仅提供了Invocation所需要的参数而已，继续回到Invoker
+
+这个可执行对象的执行过程分成三种类型：
+
+-	类型1：本地执行类的Invoker
+
+-	类型2：远程通信执行类的Invoker
+
+-	类型3：多个类型2的Invoker聚合成的集群版的Invoker
+
+以HelloService接口方法为例：
+
+-	本地执行类的Invoker： server端，含有对应的HelloServiceImpl实现，要执行该接口方法，仅仅只需要通过反射执行HelloServiceImpl对应的方法即可
+
+-	远程通信执行类的Invoker： client端，要想执行该接口方法，需要需要进行远程通信，发送要执行的参数信息给server端，server端利用上述本地执行的Invoker执行相应的方法，然后将返回的结果发送给client端。这整个过程算是该类Invoker的典型的执行过程
+
+-	集群版的Invoker：client端，拥有某个服务的多个Invoker，此时client端需要做的就是将这个多个Invoker聚合成一个集群版的Invoker，client端使用的时候，仅仅通过集群版的Invoker来进行操作。集群版的Invoker会从众多的远程通信类型的Invoker中选择一个来执行（从中加入负载均衡策略），还可以采用一些失败转移策略等
+
+所以来看下Invoker的实现情况：
+
+![Invoker的实现情况](https://static.oschina.net/uploads/img/201509/27183301_Y1QA.png "Invoker的实现情况")
+
+###3.3.2 ProxyFactory概念
+
+
+
+
 
 
 
