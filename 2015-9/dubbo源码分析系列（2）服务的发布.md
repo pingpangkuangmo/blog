@@ -161,6 +161,11 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
         }
 	}
 
+所以服务发布过程大致分成两步：
+
+-	第一步：通过ProxyFactory将HelloServiceImpl封装成一个Invoker
+-	第二步：使用Protocol将invoker导出成一个Exporter
+
 这里面就涉及到几个大的概念。ProxyFactory、Invoker、Protocol、Exporter。下面来一一介绍
 
 ##3.3 概念介绍
@@ -232,7 +237,177 @@ Invoker： 一个可执行的对象，能够根据方法名称、参数得到相
 
 ###3.3.2 ProxyFactory概念
 
+对于server端，主要负责将服务如HelloServiceImpl统一进行包装成一个Invoker，这些Invoker通过反射来执行具体的HelloServiceImpl对象的方法。
 
+接口定义如下：
+
+	@Extension("javassist")
+	public interface ProxyFactory {
+	
+	  	//针对client端，创建出代理对象
+	    @Adaptive({Constants.PROXY_KEY})
+	    <T> T getProxy(Invoker<T> invoker) throws RpcException;
+	
+		//针对server端，将服务对象如HelloServiceImpl包装成一个Invoker对象
+	    @Adaptive({Constants.PROXY_KEY})
+	    <T> Invoker<T> getInvoker(T proxy, Class<T> type, URL url) throws RpcException;
+	
+	}
+
+ProxyFactory的接口实现有JdkProxyFactory、JavassistProxyFactory，默认是JavassistProxyFactory，
+JdkProxyFactory内容如下：
+
+	public <T> Invoker<T> getInvoker(T proxy, Class<T> type, URL url) {
+        return new AbstractProxyInvoker<T>(proxy, type, url) {
+            @Override
+            protected Object doInvoke(T proxy, String methodName, 
+                                      Class<?>[] parameterTypes, 
+                                      Object[] arguments) throws Throwable {
+                Method method = proxy.getClass().getMethod(methodName, parameterTypes);
+                return method.invoke(proxy, arguments);
+            }
+        };
+    }
+
+可以看到是创建了一个AbstractProxyInvoker（这类就是本地执行的Invoker），它对Invoker的Result invoke(Invocation invocation)实现如下：
+
+	public Result invoke(Invocation invocation) throws RpcException {
+        try {
+            return new RpcResult(doInvoke(proxy, invocation.getMethodName(), invocation.getParameterTypes(), invocation.getArguments()));
+        } catch (InvocationTargetException e) {
+            return new RpcResult(e.getTargetException());
+        } catch (Throwable e) {
+            throw new RpcException("Failed to invoke remote proxy " + invocation + " to " + getUrl() + ", cause: " + e.getMessage(), e);
+        }
+    }
+
+综上所述，服务发布的第一个过程就是：
+
+使用ProxyFactory将HelloServiceImpl封装成一个本地执行的Invoker。
+
+
+###3.3.3 Protocol概念
+
+从上面得知服务发布的第一个过程就是：
+
+使用ProxyFactory将HelloServiceImpl封装成一个本地执行的Invoker。
+
+执行这个服务，即执行这个本地Invoker，即调用这个本地Invoker的invoke(Invocation invocation)方法，方法的执行过程就是通过反射执行了HelloServiceImpl的内容。现在的问题是：这个方法的参数Invocation invocation的来源问题。
+
+
+针对server端来说，Protocol要解决的问题就是：根据指定协议对外公布这个HelloService服务，当客户端根据协议调用这个服务时，将客户端传递过来的Invocation参数交给上述的Invoker来执行。所以Protocol加入了远程通信协议的这一块，根据客户端的请求来获取参数Invocation invocation。
+
+先来看下Protocol的接口定义：
+
+	@Extension("dubbo")
+	public interface Protocol {
+	    
+	    int getDefaultPort();
+
+		//针对server端来说，将本地执行类的Invoker通过协议暴漏给外部。这样外部就可以通过协议发送执行参数Invocation，然后交给本地Invoker来执行
+	    @Adaptive
+		<T> Exporter<T> export(Invoker<T> invoker) throws RpcException;
+	
+		//这个时针对客户端的，客户端从注册中心获取服务器端发布的服务信息
+		//通过服务信息得知服务器端使用的协议，然后客户端仍然使用该协议构造一个Invoker。这个Invoker是远程通信类的Invoker。
+		//执行时，需要将执行信息通过指定协议发送给服务器端，服务器端接收到参数Invocation，然后交给服务器端的本地Invoker来执行
+	    @Adaptive
+	    <T> Invoker<T> refer(Class<T> type, URL url) throws RpcException;
+	
+		void destroy();
+	
+	}
+
+
+我们再来详细看看服务发布的第二步：
+
+	Exporter<?> exporter = protocol.export(invoker);
+
+protocol的来历是：
+
+	Protocol protocol = ExtensionLoader.getExtensionLoader(Protocol.class).getAdaptiveExtension();
+
+我们从第一篇文章[dubbo源码分析系列（1）扩展机制的实现](http://my.oschina.net/pingpangkuangmo/blog/508963),可以知道上述获取Protocol protocol的原理，这里就不再多说了，直接贴出最终的Protocol的实现代码：
+
+	public com.alibaba.dubbo.rpc.Exporter export(com.alibaba.dubbo.rpc.Invoker arg0) throws com.alibaba.dubbo.rpc.RpcException{
+	    if (arg0 == null)  { 
+	        throw new IllegalArgumentException("com.alibaba.dubbo.rpc.Invoker argument == null"); 
+	    }
+	    if (arg0.getUrl() == null) { 
+	        throw new IllegalArgumentException("com.alibaba.dubbo.rpc.Invoker argument getUrl() == null"); 
+	    }
+	    com.alibaba.dubbo.common.URL url = arg0.getUrl();
+	    String extName = ( url.getProtocol() == null ? "dubbo" : url.getProtocol() );
+	    if(extName == null) {
+	        throw new IllegalStateException("Fail to get extension(com.alibaba.dubbo.rpc.Protocol) name from url(" + url.toString() + ") use keys([protocol])"); 
+	    }
+	    com.alibaba.dubbo.rpc.Protocol extension = (com.alibaba.dubbo.rpc.Protocol)com.alibaba.dubbo.common.ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension(extName);
+	    return extension.export(arg0);
+	}
+
+	public com.alibaba.dubbo.rpc.Invoker refer(java.lang.Class arg0,com.alibaba.dubbo.common.URL arg1) throws com.alibaba.dubbo.rpc.RpcException{
+	    if (arg1 == null)  { 
+	        throw new IllegalArgumentException("url == null"); 
+	    }
+	    com.alibaba.dubbo.common.URL url = arg1;
+	    String extName = ( url.getProtocol() == null ? "dubbo" : url.getProtocol() );
+	    if(extName == null) {
+	        throw new IllegalStateException("Fail to get extension(com.alibaba.dubbo.rpc.Protocol) name from url(" + url.toString() + ") use keys([protocol])"); 
+	    }
+	    com.alibaba.dubbo.rpc.Protocol extension = (com.alibaba.dubbo.rpc.Protocol)com.alibaba.dubbo.common.ExtensionLoader.getExtensionLoader(com.alibaba.dubbo.rpc.Protocol.class).getExtension(extName);
+	    return extension.refer(arg0, arg1);
+	}
+
+export(Invoker invoker)的过程即根据Invoker中url的配置信息来最终选择的Protocol实现，默认实现是"dubbo"的扩展实现即DubboProtocol，然后再对DubboProtocol进行依赖注入，进行wrap包装。先来看看Protocol的实现情况：
+
+![Protocol的实现情况](https://static.oschina.net/uploads/img/201509/27223034_cH5E.png "Protocol的实现情况")
+
+可以看到在返回DubboProtocol之前，经过了ProtocolFilterWrapper、ProtocolListenerWrapper、RegistryProtocol的包装。
+
+所谓的包装就是如下类似的内容：
+
+	package com.alibaba.xxx;
+ 
+	import com.alibaba.dubbo.rpc.Protocol;
+	 
+	public class XxxProtocolWrapper implemenets Protocol {
+	    Protocol impl;
+	 
+	    public XxxProtocol(Protocol protocol) { impl = protocol; }
+	 
+	    // 接口方法做一个操作后，再调用extension的方法
+	    public Exporter<T> export(final Invoker<T> invoker) {
+	        //... 一些操作
+	        impl .export(invoker);
+	        // ... 一些操作
+	    }
+	 
+	    // ...
+	}
+
+使用装饰器模式，类似AOP的功能。
+
+下面主要讲解RegistryProtocol和DubboProtocol，先暂时忽略ProtocolFilterWrapper、ProtocolListenerWrapper
+
+所以上述服务发布的过程
+
+	Exporter<?> exporter = protocol.export(invoker)；
+
+会先经过RegistryProtocol，它干了哪些事呢？
+
+-	利用内部的Protocol即DubboProtocol，将服务进行导出，如下
+
+		exporter = protocol.export(new InvokerWrapper<T>(invoker, url));
+
+-	根据注册中心的registryUrl获取注册服务Registry，然后将serviceUrl注册到注册中心上
+
+		Registry registry = registryFactory.getRegistry(registryUrl);
+        registry.register(serviceUrl)
+
+-	
+###3.3.4 Exporter概念
+
+负责维护invoker的生命周期
 
 
 
