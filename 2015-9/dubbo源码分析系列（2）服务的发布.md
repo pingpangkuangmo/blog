@@ -183,6 +183,8 @@ Invoker： 一个可执行的对象，能够根据方法名称、参数得到相
 	    URL getUrl();
 	    
 	    Result invoke(Invocation invocation) throws RpcException;
+
+		void destroy();
 	
 	}
 
@@ -308,7 +310,7 @@ JdkProxyFactory内容如下：
 	    @Adaptive
 		<T> Exporter<T> export(Invoker<T> invoker) throws RpcException;
 	
-		//这个时针对客户端的，客户端从注册中心获取服务器端发布的服务信息
+		//这个是针对客户端的，客户端从注册中心获取服务器端发布的服务信息
 		//通过服务信息得知服务器端使用的协议，然后客户端仍然使用该协议构造一个Invoker。这个Invoker是远程通信类的Invoker。
 		//执行时，需要将执行信息通过指定协议发送给服务器端，服务器端接收到参数Invocation，然后交给服务器端的本地Invoker来执行
 	    @Adaptive
@@ -399,16 +401,73 @@ export(Invoker invoker)的过程即根据Invoker中url的配置信息来最终�
 
 		exporter = protocol.export(new InvokerWrapper<T>(invoker, url));
 
--	根据注册中心的registryUrl获取注册服务Registry，然后将serviceUrl注册到注册中心上
+-	根据注册中心的registryUrl获取注册服务Registry，然后将serviceUrl注册到注册中心上,供客户端订阅
 
 		Registry registry = registryFactory.getRegistry(registryUrl);
         registry.register(serviceUrl)
 
--	
+
+来详细看看上述DubboProtocol的服务导出功能：
+
+-	首先根据Invoker的url获取ExchangeServer通信对象（负责与客户端的通信模块），以url中的host和port作为key存至Map<String, ExchangeServer> serverMap中。即可以采用全部服务的通信交给这一个ExchangeServer通信对象，也可以某些服务单独使用新的ExchangeServer通信对象。
+
+		String key = url.getAddress();
+        //client 也可以暴露一个只有server可以调用的服务。
+        boolean isServer = url.getParameter(RpcConstants.IS_SERVER_KEY,true);
+        if (isServer && ! serverMap.containsKey(key)) {
+            serverMap.put(key, getServer(url));
+        }
+
+-	创建一个DubboExporter，封装invoker。然后根据url的port、path（接口的名称）、版本号、分组号作为key，将DubboExporter存至Map<String, Exporter<?>> exporterMap中
+
+		key = serviceKey(url);
+        DubboExporter<T> exporter = new DubboExporter<T>(invoker, key, exporterMap);
+        exporterMap.put(key, exporter);
+
+
+现在我们要搞清楚我们的目的：通过通信对象获取客户端传来的Invocation invocation参数，然后找到对应的DubboExporter（即能够获取到本地Invoker）就可以执行服务了。
+
+上述每一个ExchangeServer通信对象都绑定了一个ExchangeHandler requestHandler对象，内容简略如下：
+
+	private ExchangeHandler requestHandler = new ExchangeHandlerAdapter() {
+        
+        public Object reply(ExchangeChannel channel, Object message) throws RemotingException {
+            if (message instanceof Invocation) {
+                Invocation inv = (Invocation) message;
+                Invoker<?> invoker = getInvoker(channel, inv);
+                RpcContext.getContext().setRemoteAddress(channel.getRemoteAddress());
+                return invoker.invoke(inv);
+            }
+            throw new RemotingException(channel, "Unsupported request: " + message == null ? null : (message.getClass().getName() + ": " + message) + ", channel: consumer: " + channel.getRemoteAddress() + " --> provider: " + channel.getLocalAddress());
+        }
+    };
+
+可以看到在获取到Invocation参数后，调用getInvoker(channel, inv)来获取本地Invoker。获取过程就是根据channel获取port，根据Invocation inv信息获取要调用的服务接口、版本号、分组号等，以此组装成key，从上述Map<String, Exporter<?>> exporterMap中获取Exporter，然后就可以找到对应的Invoker了，就可以顺利的调用服务了。
+
+而对于通信这一块，接下来会专门来详细的说明。
+
 ###3.3.4 Exporter概念
 
-负责维护invoker的生命周期
+负责维护invoker的生命周期。接口定义如下：
 
+	public interface Exporter<T> {
+  
+	    Invoker<T> getInvoker();
+	
+	    void unexport();
+	
+	}
+
+包含了一个Invoker对象。一旦想撤销该服务，就会调用Invoker的destroy()方法，同时清理上述exporterMap中的数据。对于RegistryProtocol来说就需要向注册中心撤销该服务。
+
+
+#4 结束语
+
+本文简略地介绍了接入Spring过程的原理，以及服务发布过程中的几个概念。接下来的打算是：
+
+-	客户端订阅服务与使用服务涉及的概念
+-	注册中心模块
+-	客户端与服务器端网络通信模块
 
 
 
