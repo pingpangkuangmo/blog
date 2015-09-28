@@ -111,7 +111,7 @@ dubbo就是自定义类型的，所以也要给出NamespaceHandler、BeanDefinit
 
 利用Spring就做了上述过程，得到相应的配置数据，然后启动相应的服务。如果想剥离Spring，我们就可以手动来创建上述配置对象，通过ServiceConfig和ReferenceConfig的API来启动相应的服务
 
-#3 服务的发布与注册过程
+#3 服务的发布过程
 
 ##3.1 案例介绍
 
