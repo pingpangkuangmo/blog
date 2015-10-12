@@ -4,9 +4,7 @@
 -	[dubbo源码分析系列（2）服务的发布](http://my.oschina.net/pingpangkuangmo/blog/511766)
 -	[dubbo源码分析系列（3）服务的引用](http://my.oschina.net/pingpangkuangmo/blog/515673)
 
-#2 服务的引用过程
-
-##2.1 案例介绍
+#2 服务引用案例介绍
 
 先看一个简单的客户端引用服务的例子，dubbo配置如下：
 
@@ -58,7 +56,7 @@ HelloService接口内容如下：
 
 下面来具体说明这个过程。
 
-#3 注册中心服务引用过程
+#3 服务引用过程
 
 第一步：收集配置的参数，参数如下：
 
