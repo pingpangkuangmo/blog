@@ -85,7 +85,7 @@ Rector多线程模型如下，更多信息见[Netty系列之Netty线程模型](h
 
 -	2 定义自己的com.alibaba.dubbo.remoting.ChannelHandler接口，用于处理com.alibaba.dubbo.remoting.Channel接口的连接读写事件
 
--	2.1 先定义用于处理netty的NettyHandler，需要按照netty的方式继承netty的org.jboss.netty.channel.SimpleChannelHandler
+-	2.1 先定义用于处理netty的NettyHandler，需要按照netty的方式继承netty的org.jboss.netty.channel.SimpleChannelHandler，此时NettyHandler就可以委托dubbo的com.alibaba.dubbo.remoting.ChannelHandler接口实现来完成具体的功能，在交给com.alibaba.dubbo.remoting.ChannelHandler接口实现之前，需要先将netty自己的org.jboss.netty.channel.Channel channel转化成上述的NettyChannel
 
 
 
