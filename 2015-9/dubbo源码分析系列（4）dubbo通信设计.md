@@ -61,7 +61,7 @@ Rector多线程模型如下，更多信息见[Netty系列之Netty线程模型](h
 
 用一个线程池即workers，负责处理Selector派发的读写操作。
 
-由于boss线程可以接收更多的Socket连接，同时可以充分利用线程池中的每个线程，减少了BIO模型下每个线程的等待时间。
+由于boss线程可以接收更多的Socket连接，同时可以充分利用线程池中的每个线程，减少了BIO模型下每个线程为单独的socket的等待时间。
 
 ##2.2 如何集成netty和mina
 
@@ -86,6 +86,14 @@ Rector多线程模型如下，更多信息见[Netty系列之Netty线程模型](h
 -	2 定义自己的com.alibaba.dubbo.remoting.ChannelHandler接口，用于处理com.alibaba.dubbo.remoting.Channel接口的连接读写事件
 
 -	2.1 先定义用于处理netty的NettyHandler，需要按照netty的方式继承netty的org.jboss.netty.channel.SimpleChannelHandler，此时NettyHandler就可以委托dubbo的com.alibaba.dubbo.remoting.ChannelHandler接口实现来完成具体的功能，在交给com.alibaba.dubbo.remoting.ChannelHandler接口实现之前，需要先将netty自己的org.jboss.netty.channel.Channel channel转化成上述的NettyChannel
+
+-	2.2 先定义用于处理mina的MinaHandler，需要按照mina的方式继承mina的org.apache.mina.common.IoHandlerAdapter，此时MinaHandler就可以委托dubbo的com.alibaba.dubbo.remoting.ChannelHandler接口实现来完成具体的功能，在交给com.alibaba.dubbo.remoting.ChannelHandler接口实现之前，需要先将mina自己的org.apache.mina.common.IoSession转化成上述的MinaChannel
+
+做了上述事情之后，全部逻辑就统一到dubbo自己的com.alibaba.dubbo.remoting.ChannelHandler接口如何来处理自己的com.alibaba.dubbo.remoting.Channel接口。
+
+这就需要看下com.alibaba.dubbo.remoting.ChannelHandler接口的实现有哪些：
+
+
 
 
 
