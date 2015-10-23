@@ -57,7 +57,7 @@ Rector多线程模型如下，更多信息见[Netty系列之Netty线程模型](h
 
 ![Rector多线程模型](https://static.oschina.net/uploads/img/201510/20083315_ObVg.png "Rector多线程模型")
 
-用一个boss线程，创建Selector，用于不断监听Socket连接、客户端的读写操作等。
+用一个boss线程，创建Selector，用于不断监听Socket连接、客户端的读写操作等
 
 用一个线程池即workers，负责处理Selector派发的读写操作。
 
@@ -92,6 +92,8 @@ Rector多线程模型如下，更多信息见[Netty系列之Netty线程模型](h
 做了上述事情之后，全部逻辑就统一到dubbo自己的com.alibaba.dubbo.remoting.ChannelHandler接口如何来处理自己的com.alibaba.dubbo.remoting.Channel接口。
 
 这就需要看下com.alibaba.dubbo.remoting.ChannelHandler接口的实现有哪些：
+
+![ChannelHandler接口实现](https://static.oschina.net/uploads/img/201510/23082021_ZCfI.png "ChannelHandler接口实现")
 
 
 
