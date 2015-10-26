@@ -3,6 +3,7 @@
 -	[dubbo源码分析系列（1）扩展机制的实现](http://my.oschina.net/pingpangkuangmo/blog/508963)
 -	[dubbo源码分析系列（2）服务的发布](http://my.oschina.net/pingpangkuangmo/blog/511766)
 -	[dubbo源码分析系列（3）服务的引用](http://my.oschina.net/pingpangkuangmo/blog/515673)
+-	[dubbo源码分析系列（4）dubbo通信设计](http://my.oschina.net/pingpangkuangmo/blog/521945)
 
 #2 NIO通信层的抽象
 

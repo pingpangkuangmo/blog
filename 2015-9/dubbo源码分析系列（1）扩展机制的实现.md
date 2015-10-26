@@ -1,5 +1,10 @@
 #1 系列目录
 
+-	[dubbo源码分析系列（1）扩展机制的实现](http://my.oschina.net/pingpangkuangmo/blog/508963)
+-	[dubbo源码分析系列（2）服务的发布](http://my.oschina.net/pingpangkuangmo/blog/511766)
+-	[dubbo源码分析系列（3）服务的引用](http://my.oschina.net/pingpangkuangmo/blog/515673)
+-	[dubbo源码分析系列（4）dubbo通信设计](http://my.oschina.net/pingpangkuangmo/blog/521945)
+
 #2 SPI扩展机制
 
 站在一个框架作者的角度来说，定义一个接口，自己默认给出几个接口的实现类，同时允许框架的使用者也能够自定义接口的实现。现在一个简单的问题就是：如何优雅的根据一个接口来获取该接口的所有实现类呢？

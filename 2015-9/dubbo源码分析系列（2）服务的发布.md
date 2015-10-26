@@ -1,5 +1,10 @@
 #1 系列目录
 
+-	[dubbo源码分析系列（1）扩展机制的实现](http://my.oschina.net/pingpangkuangmo/blog/508963)
+-	[dubbo源码分析系列（2）服务的发布](http://my.oschina.net/pingpangkuangmo/blog/511766)
+-	[dubbo源码分析系列（3）服务的引用](http://my.oschina.net/pingpangkuangmo/blog/515673)
+-	[dubbo源码分析系列（4）dubbo通信设计](http://my.oschina.net/pingpangkuangmo/blog/521945)
+
 #2 dubbo与spring接入
 
 dubbo的官方文档也说明了，dubbo可以不依赖任何Spring。这一块日后再详细说明，目前先介绍dubbo与Spring的集成。与spring的集成是基于Spring的Schema扩展进行加载
