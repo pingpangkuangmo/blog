@@ -244,7 +244,7 @@ AbstractSecurityInterceptor是Spring Security用于拦截请求进行权限鉴�
 -	7 将上述Authentication对象封装到SecurityContext中
 -	8 SecurityContextPersistentFilter将上述SecurityContext保存到对应的HttpSession属性中，key为：SPRING_SECURITY_CONTEXT
 
-	SecurityContextPersistentFilter在Filter执行前，从HttpSession中先尝试获取保存的SecurityContext对象信息，如果没有则创建一个
+	SecurityContextPersistentFilter在Filter执行前，从HttpSession中先尝试获取保存的SecurityContext对象信息，如果没有则创建一个。如果HttpSession没有的话，看SecurityContextPersistentFilter的forceEagerSessionCreation属性，如果强制产生，则在此处调用request的getSession方法产生HttpSession
 
 	Filter执行后，会将上述SecurityContext对象信息保存到HttpSession的属性中
 
@@ -253,6 +253,130 @@ AbstractSecurityInterceptor是Spring Security用于拦截请求进行权限鉴�
 	也就是说，用户在某一次请求的过程中，SecurityContext是保存在ThreadLocal中的，但是请求结束后，就会被清除了。同时，SecurityContext也被保存在HttpSession中，这样的话，同一个用户不同请求即使是在不同的线程上，也都能根据session来获取到SecurityContext信息。
 
 	![SecurityContextPersistentFilter执行逻辑](https://static.oschina.net/uploads/img/201511/02233236_mdz1.png "SecurityContextPersistentFilter执行逻辑")
+
+#6 Filter链
+
+Spring Security已经定义了一些Filter，不管实际应用中你用到了哪些，它们应当保持如下顺序。
+
+-	（1）ChannelProcessingFilter，如果你访问的channel错了，那首先就会在channel之间进行跳转，如http变为https。
+-	（2）SecurityContextPersistenceFilter，这样的话在一开始进行request的时候就可以在SecurityContextHolder中建立一个SecurityContext，然后在请求结束的时候，任何对SecurityContext的改变都可以被copy到HttpSession。
+-	（3）ConcurrentSessionFilter，因为它需要使用SecurityContextHolder的功能，而且更新对应session的最后更新时间，以及通过SessionRegistry获取当前的SessionInformation以检查当前的session是否已经过期，过期则会调用LogoutHandler。
+-	（4）认证处理机制，如UsernamePasswordAuthenticationFilter，CasAuthenticationFilter，BasicAuthenticationFilter等，以至于SecurityContextHolder可以被更新为包含一个有效的Authentication请求。
+-	（5）SecurityContextHolderAwareRequestFilter，它将会把HttpServletRequest封装成一个继承自HttpServletRequestWrapper的SecurityContextHolderAwareRequestWrapper，同时使用SecurityContext实现了HttpServletRequest中与安全相关的方法。
+-	（6）JaasApiIntegrationFilter，如果SecurityContextHolder中拥有的Authentication是一个JaasAuthenticationToken，那么该Filter将使用包含在JaasAuthenticationToken中的Subject继续执行FilterChain。
+-	（7）RememberMeAuthenticationFilter，如果之前的认证处理机制没有更新SecurityContextHolder，并且用户请求包含了一个Remember-Me对应的cookie，那么一个对应的Authentication将会设给SecurityContextHolder。
+-	（8）AnonymousAuthenticationFilter，如果之前的认证机制都没有更新SecurityContextHolder拥有的Authentication，那么一个AnonymousAuthenticationToken将会设给SecurityContextHolder。
+-	（9）ExceptionTransactionFilter，用于处理在FilterChain范围内抛出的AccessDeniedException和AuthenticationException，并把它们转换为对应的Http错误码返回或者对应的页面。
+-	（10）FilterSecurityInterceptor，保护Web URI，并且在访问被拒绝时抛出异常
+
+
+在web.xml中如下配置：
+
+		<filter>
+	      <filter-name>springSecurityFilterChain</filter-name>
+	     <filter-class>org.springframework.web.filter.DelegatingFilterProxy</filter-class>
+	   </filter>
+	   <filter-mapping>
+	      <filter-name>springSecurityFilterChain</filter-name>
+	      <url-pattern>/*</url-pattern>
+	   </filter-mapping>
+
+DelegatingFilterProxy其实是委托给Spring容器中的Filter来执行，如何指定哪一个呢？采用DelegatingFilterProxy自身的targetBeanName这个参数
+
+上述就是默认取值spring容器中的这个springSecurityFilterChain Filter，采用的是FilterChainProxy类
+
+当我们使用基于Spring Security的NameSpace进行配置时，系统会自动为我们注册一个名为springSecurityFilterChain类型为FilterChainProxy的bean。该FilterChainProxy含有一个List<SecurityFilterChain> filterChains属性，我们如下配置
+
+
+Spring security允许我们在配置文件中配置多个http元素，以针对不同形式的URL使用不同的安全控制。Spring Security将会为每一个http元素创建对应的FilterChain，同时按照它们的声明顺序加入到FilterChainProxy。所以当我们同时定义多个http元素时要确保将更具有特性的URL配置在前。
+
+	   <security:http pattern="/login*.jsp*" security="none"/>
+	   <!-- http元素的pattern属性指定当前的http对应的FilterChain将匹配哪些URL，如未指定将匹配所有的请求 -->
+	   <security:http pattern="/admin/**">
+	      <security:intercept-url pattern="/**" access="ROLE_ADMIN"/>
+	   </security:http>
+	   <security:http>
+	      <security:intercept-url pattern="/**" access="ROLE_USER"/>
+	   </security:http>
+
+每一个<security:http>都将对应一个SecurityFilterChain。每一个SecurityFilterChain中都包含各自的Filter
+
+	private void doFilterInternal(ServletRequest request, ServletResponse response, FilterChain chain)
+            throws IOException, ServletException {
+
+        FirewalledRequest fwRequest = firewall.getFirewalledRequest((HttpServletRequest) request);
+        HttpServletResponse fwResponse = firewall.getFirewalledResponse((HttpServletResponse) response);
+
+        List<Filter> filters = getFilters(fwRequest);
+
+        if (filters == null || filters.size() == 0) {
+            if (logger.isDebugEnabled()) {
+                logger.debug(UrlUtils.buildRequestUrl(fwRequest) +
+                        (filters == null ? " has no matching filters" : " has an empty filter list"));
+            }
+
+            fwRequest.reset();
+
+            chain.doFilter(fwRequest, fwResponse);
+
+            return;
+        }
+
+        VirtualFilterChain vfc = new VirtualFilterChain(fwRequest, chain, filters);
+        vfc.doFilter(fwRequest, fwResponse);
+    }
+
+-	1 获取该request访问的url获取匹配的<security:http>，即获取匹配的SecurityFilterChain，然后返回该SecurityFilterChain的所有Filter
+-	2 上述Filter构建成一个FilterChain链
+-	3 执行上述FilterChain链
+
+默认注册了如下Filter
+
+-	SecurityContextPersistenceFilter
+
+	在一开始进行request的时候就可以在SecurityContextHolder中建立一个SecurityContext，然后在请求结束的时候，任何对SecurityContext的改变都可以被copy到HttpSession
+
+-	LogoutFilter
+
+	检查是否是登出地址
+
+-	UsernamePasswordAuthenticationFilter
+
+	UsernamePasswordAuthenticationFilter会检查请求地址是不是配置的登陆地址，如果是则进行认证检查，从request中获取username和password构建成UsernamePasswordAuthenticationToken，然后使用AuthenticationManager authenticationManager来进行认证过程，认证成功之后重定向到target地址
+
+-	BasicAuthenticationFilter
+-	RequestCacheAwareFilter
+
+	session中还可以保存着key为SPRING_SECURITY_SAVED_REQUEST的类型为DefaultSavedRequest的request信息，每次请求都要从request中获取session，如果没有则不会创建session，如果有session，则从session中获取DefaultSavedRequest的request信息，如果没有保存的话，则仍然为null，默认情况下，这个filter不起作用，因为没有向session中保存上述信息
+
+-	SecurityContextHolderAwareRequestFilter
+-	AnonymousAuthenticationFilter
+
+	如果当前用户的SecurityContext中的认证信息为null的话，创建一个默认的角色
+
+-	SessionManagementFilter
+-	ExceptionTranslationFilter
+
+	捕获之后程序执行中的AuthenticationException和AccessDeniedException。如果用户没有认证信息，则引导用户重定向到登陆界面，如果已经有登陆信息，则认为是权限不足，重定向到权限不足界面
+
+-	FilterSecurityInterceptor
+
+	保护每一个受访问的uri，一旦用户权限不足，则抛出AccessDeniedException异常
+
+我们可以看到整个过程与session打交道的时候仅仅是在SecurityContextPersistenceFilter中，请求完成之后，会将SecurityContext信息保存到session中而已。供下次使用的时候，直接从session中获取SecurityContext信息，此时的SecurityContext信息中含有用户的认证信息，因此访问一个资源的话，上述filter都不会拦截，在FilterSecurityInterceptor中也会被正常通过。
+
+一旦session失效，不能从session中获取SecurityContext信息了，就会在FilterSecurityInterceptor抛出AccessDeniedException异常，然后被ExceptionTranslationFilter捕获，引导用户重定向到登陆界面
+
+
+
+
+
+
+
+
+
+
+
 
 
 
