@@ -1,3 +1,7 @@
+参考如下文章整理的笔记：
+
+-	[Spring Security系列](http://www.iteye.com/blogs/subjects/spring_security)
+
 #1 Authentication认证信息
 
 认证前：用来表示用户输入的认证信息的对象
