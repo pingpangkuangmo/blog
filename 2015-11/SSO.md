@@ -71,7 +71,7 @@ CasAuthenticationEntryPoint拥有上述ServiceProperties对象：
 
 -	2 再对上述Assertion对象进行检查是否被锁等，最后封装成一个CasAuthenticationToken对象，CasAuthenticationProvider认证结束
 
-之后要做的就是把上述认证结果保存到session中。谁来做？应该是CasAuthenticationFilter。
+之后要做的就是把上述认证结果保存到session中。谁来做？应该是之前的Filter SecurityContextPersistenceFilter,它专门负责将认证信息存入session中。
 
 #CasAuthenticationFilter 掌控执行认证过程
 
@@ -97,7 +97,7 @@ CasAuthenticationEntryPoint拥有上述ServiceProperties对象：
 
     return this.getAuthenticationManager().authenticate(authRequest)
 
-一旦使用上述CasAuthenticationProvider认证成功，则需要将认证结果Authentication保存到SecurityContext中，然后将SecurityContext保存到session中
+一旦使用上述CasAuthenticationProvider认证成功，则需要将认证结果Authentication保存到SecurityContext中，然后使用SecurityContextPersistenceFilter将SecurityContext保存到session中
 
 
 
