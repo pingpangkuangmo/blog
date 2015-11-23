@@ -92,7 +92,7 @@ SelectorManager代码如下：
 
 而Gecko则是将读写事件交给了专门的读写线程池，这样的话Reactor线程只管发出读写任务（一个Runnable对象），真正的读写操作交给读写线程池来完成，Reactor线程处理事件的并发量就大了，但是这样的话就是就可能出现多个IO线程并发操作同一个连接，加大了出错的风险。
 
-##2.3 编解码的处理
+##2.3 编解码和序列化反序列化的处理
 
 这一部分就需要处理粘包问题、采用的协议
 
@@ -136,12 +136,25 @@ buffer中多条消息的处理：
 
 ![buffer中多条消息的处理](https://static.oschina.net/uploads/img/201511/22230540_wVGF.png "buffer中多条消息的处理")
 
-来看下一个解码器的实现：
+来看下一个解码器的实现，启动不同场景下的Server使用不同的编解码器，如metaq命令行方式就是使用如下编解码器，专门用于处理请求命令的：
 
 ![Gecko中对Header和Body的解析](https://static.oschina.net/uploads/img/201511/22222912_141f.png "Gecko中对Header和Body的解析")
 
+对于RPC，不仅要进行编解码，同时还要涉及序列化和发序列化的问题：
+
+dubbo中都是通过url中参数值来定制化编解码器和序列化反序列化方式,提供了各种丰富多样的编解码和序列化反序列化方式，而Gecko实现的RPC也可以实现定制化。默认方式是使用jdk自带的序列化和反序列化方式，即ObjectInputStream方式，简单代码如下
+
+Gecko RPC解码过程：
+
+![RPC解码过程](https://static.oschina.net/uploads/img/201511/23081934_HyMV.png "RPC解码过程")
+
+Gecko RPC序列化过程:
+
+![Gecko RPC序列化过程](https://static.oschina.net/uploads/img/201511/23082218_xfJk.png "Gecko RPC序列化过程")
 
 ##2.4 重连管理，分组管理
+
+
 
 
 
