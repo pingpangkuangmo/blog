@@ -2,7 +2,7 @@
 
 #1 参考资料
 
--	[The InnoDB Transaction Model and Locking](https://dev.mysql.com/doc/refman/5.7/en/innodb-transaction-model.html)
+-	[The InnoDB Transaction Mode and Locking-官方文档](https://dev.mysql.com/doc/refman/5.7/en/innodb-transaction-model.html)
 -	[MySQL 加锁处理分析](http://hedengcheng.com/?p=771#_Toc374698317)
 
 #2 要明确的概念
@@ -19,7 +19,10 @@
 	INSERT INTO t VALUES(6);
 	commit;
 
-就隔离级别和id唯一索引、id非唯一索引组合等情况展开分析是否会出现死锁
+就隔离级别和id唯一索引、id非唯一索引组合等情况展开分析以下内容：
+
+-	使用了什么锁？阻塞情况？
+-	是否会出现死锁？
 
 ##2.1 RC和唯一索引id
 
