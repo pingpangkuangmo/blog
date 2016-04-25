@@ -9,6 +9,7 @@
 #2 要明确的概念
 
 -	不可重复读和幻读的区别
+-	快照读和当前读
 -	事务的隔离级别
 -	record lock、gap lock、next-key lock
 
@@ -23,11 +24,20 @@ select数据的不变性可以细分成2部分
 
 而目前mysql的innodb数据库引擎实现的Repeatable reads不仅仅解决了上述的第一部分也解决第二部分，即Repeatable reads级别下已经解决了幻读问题。
 
-##2.2 事务的隔离级别
+##2.2 快照读和当前读
+
+快照读： 如普通的select * from t where id>=6;采用MVCC（多版本并发控制）仅仅读取该事务号及其之前的数据
+
+当前读：如select * from t where id>=6 for update；读取的是最新提交的事务号及其之前的数据
+
+##2.3 事务的隔离级别
 
 Read committed 的隔离级别：只能读到别人已提交的数据，未提交的数据读不到，RC的隔离级别存在不可重复读和幻读的现象，即在同一个事务内，第一次select查询出一定结果后，别的客户端此时又修改了源数据和提交了新的数据，第二次select是可以查出修改后的数据和新提交的数据的，这就导致了和第一次select的数据不一致的问题
 
-Repeatable reads 的隔离级别：比起Read committed，解决了不可重复读的现象，而mysql的innodb数据库引擎实现的Repeatable reads也解决了幻读问题。解决方式是采用MVCC（多版本并发控制）来实现的。最近正在研究的HBase也用到了MVCC
+Repeatable reads 的隔离级别：比起Read committed，解决了不可重复读的现象，而mysql的innodb数据库引擎实现的Repeatable reads也解决了幻读问题。
+
+-	对于快照读中的幻读（即select * from t where id>=6出现的幻读）采用的解决方式是采用MVCC（多版本并发控制）
+-	对于当前读中的幻读（即select * from t where id>=6 for update出现的幻读）采用的解决方式是gap lock
 
 #3 问题分析
 
@@ -156,6 +166,43 @@ Repeatable reads 的隔离级别：比起Read committed，解决了不可重复�
 
 发生死锁后，innode引擎自动检测到死锁，会让一个进行释放，另一个得到执行
 
+#4 案例演示当前读和快照读
 
+创建表的sql:
+
+	create table t (
+		id int ,
+		key (id)
+	);
+
+填充数据 1、2、6、8
+
+	insert into t values(1),(2),(6),(8);
+
+步骤1：客户端A
+
+	start transaction;
+	select * from t where id>=6;
+
+步骤2：客户端B
+
+	start transaction;
+	insert into t value(10);
+	commit;
+
+步骤3：客户端A
+
+	start transaction;
+	select * from t where id>=6;
+	select * from t where id>=6 for update;
+
+
+步骤3中是第一个select是看不到客户端B新增的数据的，因为他是快照读，读取的是该事务号及其之前的数据
+
+步骤3中的第二个select是可以看到客户端B新增的数据的，因为它是当前读，读取的是最新提交的事务号及其之前的数据
+
+现象如下：
+
+![输入图片说明](https://static.oschina.net/uploads/img/201602/29112851_Wsnd.png "在这里输入图片标题")
 
 
