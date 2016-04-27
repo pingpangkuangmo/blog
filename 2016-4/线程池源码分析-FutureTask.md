@@ -1,6 +1,6 @@
 #1 系列目录
 
--	[线程池接口分析以及FutureTask设计实现]()
+-	[线程池接口分析以及FutureTask设计实现](http://my.oschina.net/pingpangkuangmo/blog/666762)
 -	[ThreadPoolExecutor实现分析]()
 
 该系列打算从一个最简单的Executor执行器开始一步一步扩展到ThreadPoolExecutor，希望能粗略的描述出线程池的各个实现细节。针对JDK1.7中的线程池
@@ -147,7 +147,7 @@ ExecutorService则继承了Executor，描述了线程池应该具有的功能特
 
 2 构建好WaitNode之后就要将该WaitNode放入链表中，这时候就会涉及多线程问题，使用UNSAFE的CAS来解决，这种方式也是AtomicLong等众多原子类的底层实现方式
 
-3 成功放入WaitNode链表之后，采用LockSupport的park阻塞当前线程，要么只阻塞一定时间要么一直阻塞，直到被LockSupport的unpark唤醒。LockSupport在锁的底层实现AQS中也非常常见，使用了LockSupport就可以不用在for循环里不断判断当前任务状态而浪费CPU，只需要当前任务完成之后，使用LockSupport对等待线程进行unpark，就可以是等待的线程退出等待继续往下执行
+3 成功放入WaitNode链表之后，采用LockSupport的park阻塞当前线程，要么只阻塞一定时间要么一直阻塞，直到被LockSupport的unpark唤醒。LockSupport在锁的底层实现AQS中也非常常见，使用了LockSupport就可以不用在for循环里不断判断当前任务状态而浪费CPU，只需要当前任务完成之后，使用LockSupport对等待线程进行unpark，就可以使等待的线程退出等待继续往下执行
 
 4 如果LockSupport阻塞时间到了，还未收到unpark，则需要从等待者链表中删除当前线程代表的等待者
 
@@ -189,6 +189,8 @@ ExecutorService则继承了Executor，描述了线程池应该具有的功能特
 1  一旦FutureTask任务开始执行了，就需要将当前执行线程设置到FutureTask的volatile Thread runner属性中
 
 2  执行原始任务Callable的call方法，可能成功也可能失败也可能被中断被取消
+
+文档中有如下状态的迁移过程：
 
 	Possible state transitions:
      * NEW -> COMPLETING -> NORMAL
@@ -243,6 +245,27 @@ ExecutorService则继承了Executor，描述了线程池应该具有的功能特
 
 这里就是遍历WaitNode链表，对每一个WaitNode对应的线程依次进行LockSupport.unpark(t)，使其结束阻塞。WaitNode通知完毕后，调用一个done方法，目前该方法是空的实现，所以你如果想在任务完成后执行一些动作的时候就可以重写该方法
 
+有一个问题就是：为什么一定要加入COMPLETING状态呢？能不能直接过度到NORMAL或者EXCEPTIONAL？
+
+目前我的理解是：NORMAL或者EXCEPTIONAL是一种最终状态，所以在出现该状态前，outcome必须已经被设置了，即有如下代码：
+
+	protected void set(V v) {
+		outcome = v;
+		UNSAFE.compareAndSwapInt(this, stateOffset, NEW, NORMAL)
+        finishCompletion();
+    }
+
+但是因为存在外部直接取消该任务，所以结果状态的设置和outcome必须是同步的，且outcome在前，为了保证代码的同步可以使用锁
+
+	protected void set(V v) {
+		synchronized(){
+			outcome = v;
+			UNSAFE.compareAndSwapInt(this, stateOffset, NEW, NORMAL)
+	        finishCompletion();
+		}
+    }
+
+为了减少锁带来的开支，就可以引入一个中间状态COMPLETING，通过CAS来间接实现锁的竞争，同时又保证outcome在最终状态NORMAL或者EXCEPTIONAL之前被设置
 
 ##3.4 FutureTask任务的取消
 
@@ -263,3 +286,10 @@ ExecutorService则继承了Executor，描述了线程池应该具有的功能特
         return true;
     }
 
+取消任务，有2种情况，一种该任务正在运行，一种就是非运行状态，所以需要用户给出明示是否中断正在运行的任务，即需要一个参数mayInterruptIfRunning
+
+中断任务就是通过中断运行该任务的线程，即直接调用该线程的interrupt()方法
+
+#4 结束语
+
+FutureTask大部分就简单分析完了，其他的自己去看下就行了。至此我们了解了一个任务被提交经过了封装，变成了一个新的任务FutureTask,同时FutureTask也明确了该任务的整个执行过程，只留出核心execute(futureTask)方法需要被子类来实现，下一篇文章就重点介绍下ThreadPoolExecutor对该核心方法的实现
