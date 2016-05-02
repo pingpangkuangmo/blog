@@ -8,9 +8,9 @@
 
 -	一个或多个Acceptor线程，每个线程都有自己的Selector，Acceptor只负责accept新的连接，一旦连接建立之后就将连接注册到其他Worker线程中
 
--	多个Worker线程，有时候也叫IO线程，就是专门负责IO读写的。每个Worker线程都有自己的Selector，可以负责多个连接的IO读写事件
+-	多个Worker线程，有时候也叫IO线程，就是专门负责IO读写的。一种实现方式就是像Netty一样，每个Worker线程都有自己的Selector，可以负责多个连接的IO读写事件，每个连接归属于某个线程。另一种方式实现方式就是有专门的线程负责IO事件监听，这些线程有自己的Selector，一旦监听到有IO读写事件，并不是像第一种实现方式那样（自己去执行IO操作），而是将IO操作封装成一个Runnable交给Worker线程池来执行，这种情况每个连接可能会被多个线程同时操作，相比第一种并发性提高了，但是也可能引来多线程问题，在处理上要更加谨慎些。tomcat的NIO模型就是第二种。
 
-所以一般参数就是Acceptor线程个数，Worker线程个数。tomcat的NIO线程模型稍微有点不太一样，来具体看下参数
+所以一般参数就是Acceptor线程个数，Worker线程个数。来具体看下参数
 
 ##1.1 acceptCount
 
@@ -176,7 +176,7 @@ The maximum number of request processing threads to be created by this Connector
 
 共享锁的tryAcquireShared实现中，如果不依托AtomicLong，则需要进行for循环加CAS的自增，自增之后没有超过limit这里即maxConnections，则直接返回1表示获取到了共享锁，如果一旦超过limit则首先进行for循环加CAS的自减，然后返回-1表示获取锁失败，便进入加入同步队列进入阻塞状态。
 
-共享锁的tryReleaseShared实现中，该方法可能会被并发执行，所以释放共享锁的时候也是需要for加CAS的自减
+共享锁的tryReleaseShared实现中，该方法可能会被并发执行，所以释放共享锁的时候也是需要for循环加CAS的自减
 
 上述的for循环加CAS的自增、for循环加CAS的自减的实现全部被替换成了AtomicLong的incrementAndGet和decrementAndGet而已。
 
@@ -242,7 +242,7 @@ The maximum number of request processing threads to be created by this Connector
 
 -	设置非阻塞，以及其他的一些参数如SoTimeout、ReceiveBufferSize、SendBufferSize
 
--	然后将SocketChannel封装成一个NioChannel，封装过程使用了缓存，即避免了重复创建NioChannel对象，直接利用原有的NioChannel，并将NioChannel中的数据全部清空
+-	然后将SocketChannel封装成一个NioChannel，封装过程使用了缓存，即避免了重复创建NioChannel对象，直接利用原有的NioChannel，并将NioChannel中的数据全部清空。也正是这个缓存也造成了一次bug，详见[断网故障时Mtop触发tomcat高并发场景下的BUG排查和修复（已被apache采纳）](https://yq.aliyun.com/articles/2889?spm=5176.team22.teamshow1.30.XRi499#)
 
 -	选择一个Poller进行注册
 
