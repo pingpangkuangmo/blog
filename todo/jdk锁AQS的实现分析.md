@@ -222,6 +222,8 @@ Lock的接口方法是针对用户的使用而定义的，我们在实现Lock的
 
 前面简单提到了，就是先拿锁实现的tryAcquire方法去尝试获取独占锁，一旦获取锁失败就进入队列，交给AQS来处理。AQS的处理简单描述下就是将当前线程包装成Node节点然后放到队列中进程排队，等待前面的Node节点都出队了，被唤醒轮到自己再次去竞争锁。
 
+我们先来认识下Node节点：
+
 
 
 ## 3.4 AbstractQueuedSynchronizer的condition queue
