@@ -210,6 +210,8 @@ Lock的接口方法是针对用户的使用而定义的，我们在实现Lock的
 
 -	getState()：获取状态值
 
+AQS提供了上述线程安全和非安全的设置状态state的方法，供我们在实现锁的tryAcquire、tryRelease等方法的时候合理的时候它们。
+
 ## 3.3 AbstractQueuedSynchronizer的FIFO队列
 
 就以获取独占锁为例来详细看下该过程：
@@ -222,9 +224,287 @@ Lock的接口方法是针对用户的使用而定义的，我们在实现Lock的
 
 前面简单提到了，就是先拿锁实现的tryAcquire方法去尝试获取独占锁，一旦获取锁失败就进入队列，交给AQS来处理。AQS的处理简单描述下就是将当前线程包装成Node节点然后放到队列中进程排队，等待前面的Node节点都出队了，被唤醒轮到自己再次去竞争锁。
 
-我们先来认识下Node节点：
+我们先来认识下Node节点,大致如下结构：
 
+	static final class Node {
+      
+	    volatile Node prev;
+	    volatile Node next;
+	
+	    volatile Thread thread;
+	
+	    Node nextWaiter;
 
+		volatile int waitStatus;
+	}
+
+	private transient volatile Node head;
+
+	private transient volatile Node tail;
+
+首先就是prev、next节点可以构成一个双向队列。AQS中含有上述的head和tail两个属性一起来构成FIFO队列。
+
+Thread thread则代表的是构成此节点的线程。
+
+Node nextWaiter：是用于condition queue，用于构成一个单向的FIFO队列，详见下面。
+
+volatile int waitStatus：则表示该节点当前的状态，目前有如下状态：
+
+	/** waitStatus value to indicate thread has cancelled */
+    static final int CANCELLED =  1;
+    /** waitStatus value to indicate successor's thread needs unparking */
+    static final int SIGNAL    = -1;
+    /** waitStatus value to indicate thread is waiting on condition */
+    static final int CONDITION = -2;
+    /**
+     * waitStatus value to indicate the next acquireShared should
+     * unconditionally propagate
+     */
+    static final int PROPAGATE = -3;
+
+CANCELLED：表示该节点所对应的线程因为获取锁的过程中超时或者被中断而被设置成此状态
+
+SIGNAL：表示该节点所对应的线程被阻塞，不再被调度执行，需要等待其他线程释放锁之后来唤醒它，才能再次加入锁的竞争
+
+CONDITION：表示该节点所对应的线程被阻塞，不再被调度执行，在等待某一个condition的signal、signalAll方法的唤醒
+
+PROPAGATE：只用于共享状态的HEAD节点，目前还没弄清楚，欢迎一起来探讨
+
+节点创建后默认状态值是0。
+
+接下来我们就要分别看下这个独占锁的入队和出队过程以及共享锁的入队和出队过程
+
+###3.3.1 独占锁的获取和释放过程
+
+先来看看获取
+
+	public final void acquire(int arg) {
+        if (!tryAcquire(arg) &&
+            acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
+            selfInterrupt();
+    }
+
+首先调用锁自己的tryAcquire业务逻辑来尝试获取锁，一旦获取失败，则进入AQS的处理流程，即acquireQueued方法
+
+第一步：就是构造一个Node并入队
+
+	private Node addWaiter(Node mode) {
+        Node node = new Node(Thread.currentThread(), mode);
+        // Try the fast path of enq; backup to full enq on failure
+        Node pred = tail;
+        if (pred != null) {
+            node.prev = pred;
+            if (compareAndSetTail(pred, node)) {
+                pred.next = node;
+                return node;
+            }
+        }
+        enq(node);
+        return node;
+    }
+
+	private Node enq(final Node node) {
+        for (;;) {
+            Node t = tail;
+            if (t == null) { // Must initialize
+                if (compareAndSetHead(new Node()))
+                    tail = head;
+            } else {
+                node.prev = t;
+                if (compareAndSetTail(t, node)) {
+                    t.next = node;
+                    return t;
+                }
+            }
+        }
+    }
+
+这里先尝试通过CAS将新添加的Node节点放置当前tail的后面，如果tail为空或者CAS失败，就进入下面的for循环形式的CAS流程，前面的尝试主要是为了针对大部分情况即（pred!=null的情况下）能够快速处理，而for循环则是要考虑所有情况，因为判断逻辑就比较多了。如刚初始化的时候，head和tail都指向了一个空的Node，该Node并不需要获取锁。
+
+第二步：入队后的处理逻辑，是被阻塞呢？还是持续不断尝试获取锁呢？
+
+	final boolean acquireQueued(final Node node, int arg) {
+        boolean failed = true;
+        try {
+            boolean interrupted = false;
+            for (;;) {
+                final Node p = node.predecessor();
+                if (p == head && tryAcquire(arg)) {
+                    setHead(node);
+                    p.next = null; // help GC
+                    failed = false;
+                    return interrupted;
+                }
+                if (shouldParkAfterFailedAcquire(p, node) &&
+                    parkAndCheckInterrupt())
+                    interrupted = true;
+            }
+        } finally {
+            if (failed)
+                cancelAcquire(node);
+        }
+    }
+
+这个就要查看新构建的Node的前一个节点是不是head,如果是head，则该新节点可以尝试下获取锁，一旦获取锁成功就会设置head指向当前节点Node。
+
+来重点说说这个head节点：刚初始化的时候head和tail都指向的是一个空的Node，head节点并没有获取到锁，见上面。如果上述尝试获取锁成功就从新设置head节点为当前Node，此时head节点又是一个获取了锁的节点。
+
+如果当前节点的前一个节点不是head或者是head但是尝试获取锁失败，此时就需要衡量下是否需要将当前节点阻塞，即shouldParkAfterFailedAcquire方法的逻辑：
+
+	private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
+        int ws = pred.waitStatus;
+        if (ws == Node.SIGNAL)
+            /*
+             * This node has already set status asking a release
+             * to signal it, so it can safely park.
+             */
+            return true;
+        if (ws > 0) {
+            /*
+             * Predecessor was cancelled. Skip over predecessors and
+             * indicate retry.
+             */
+            do {
+                node.prev = pred = pred.prev;
+            } while (pred.waitStatus > 0);
+            pred.next = node;
+        } else {
+            /*
+             * waitStatus must be 0 or PROPAGATE.  Indicate that we
+             * need a signal, but don't park yet.  Caller will need to
+             * retry to make sure it cannot acquire before parking.
+             */
+            compareAndSetWaitStatus(pred, ws, Node.SIGNAL);
+        }
+        return false;
+    }
+
+如果前置节点处于Node.SIGNAL状态，则该Node则需要被阻塞，即还轮不到它。
+
+如果前置节点状态处于Node.CANCELLED状态，则该Node需要重新更换前置节点
+
+如果前置节点状态处于其他状态，则需要把前置节点的状态值设置成Node.SIGNAL，以便下一次循环尝试获取锁失败时，该节点被阻塞，即满足上述第一种情况。从这里看出，节点的状态大部分是应用于后续节点行为判断使用的，而对自身的逻辑并没什么影响。
+
+基本上无论如何，该节点没有机会尝试获取锁或者有机会尝试获取锁但是又失败时，最终都会被阻塞，则里的阻塞使用的就是LockSupport.park：
+
+	private final boolean parkAndCheckInterrupt() {
+        LockSupport.park(this);
+        return Thread.interrupted();
+    }
+
+接下来看看释放
+
+	public final boolean release(int arg) {
+        if (tryRelease(arg)) {
+            Node h = head;
+            if (h != null && h.waitStatus != 0)
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
+    }
+
+	private void unparkSuccessor(Node node) {
+        /*
+         * If status is negative (i.e., possibly needing signal) try
+         * to clear in anticipation of signalling.  It is OK if this
+         * fails or if status is changed by waiting thread.
+         */
+        int ws = node.waitStatus;
+        if (ws < 0)
+            compareAndSetWaitStatus(node, ws, 0);
+
+        /*
+         * Thread to unpark is held in successor, which is normally
+         * just the next node.  But if cancelled or apparently null,
+         * traverse backwards from tail to find the actual
+         * non-cancelled successor.
+         */
+        Node s = node.next;
+        if (s == null || s.waitStatus > 0) {
+            s = null;
+            for (Node t = tail; t != null && t != node; t = t.prev)
+                if (t.waitStatus <= 0)
+                    s = t;
+        }
+        if (s != null)
+            LockSupport.unpark(s.thread);
+    }
+
+先调用锁的tryRelease具体业务逻辑，然后就会使用LockSupport.unpark唤醒head的下一个节点，至此在上述acquireQueued方法中被阻塞的那个Node（head的下一个Node）不再阻塞，再次继续for循环流程，又一次开始尝试，如果获取成功，则更新了head节点，则之前的head就表示出队了，如果获取还失败，说明又被外部线程获取到了，那就再一次的被park阻塞。
+
+共享锁的获取和释放过程就不再说了，大部分都是相同的。
 
 ## 3.4 AbstractQueuedSynchronizer的condition queue
 
+来看下AQS提供的Condition实现，简单如下
+
+	public class ConditionObject implements Condition{
+	    private transient Node firstWaiter;
+	    private transient Node lastWaiter;
+	}
+
+一个ConditionObject对象本身维护了一个FIFO单向队列，这里通过Node的Node nextWaiter属性来建立关联。
+
+我们来简单看看Condition的await和signal:
+
+	public final void await() throws InterruptedException {
+        if (Thread.interrupted())
+            throw new InterruptedException();
+        Node node = addConditionWaiter();
+        int savedState = fullyRelease(node);
+        int interruptMode = 0;
+        while (!isOnSyncQueue(node)) {
+            LockSupport.park(this);
+            if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+                break;
+        }
+        if (acquireQueued(node, savedState) && interruptMode != THROW_IE)
+            interruptMode = REINTERRUPT;
+        if (node.nextWaiter != null) // clean up if cancelled
+            unlinkCancelledWaiters();
+        if (interruptMode != 0)
+            reportInterruptAfterWait(interruptMode);
+    }
+
+这里不再一点一旦详细研究了，内容太多了，简单看下整体的逻辑：
+
+前提：在调用Condition的await和signal的方法前必须先获取到锁
+
+第一步：首先构造一个Node，初始化状态为Node.CONDITION，并放到对应ConditionObject的lastWaiter上
+
+第二步：释放锁
+
+第三步：while循环里检查该Node是否在同步队列即上述的FIFO双向队列，不在的话，则被park住，等待unpark的唤醒
+
+第四步：收到了unpark唤醒（在唤醒的时候就顺便将该Node加入了上述的FIFO双向队列中了，因此可以跳出while循环了），跳出了while循环
+
+第五步：该Node已经进入了上述的FIFO双向队列中了，开始了上面介绍的逻辑
+
+再来看看唤醒操作：
+
+	final boolean transferForSignal(Node node) {
+        /*
+         * If cannot change waitStatus, the node has been cancelled.
+         */
+        if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+            return false;
+
+        /*
+         * Splice onto queue and try to set waitStatus of predecessor to
+         * indicate that thread is (probably) waiting. If cancelled or
+         * attempt to set waitStatus fails, wake up to resync (in which
+         * case the waitStatus can be transiently and harmlessly wrong).
+         */
+        Node p = enq(node);
+        int ws = p.waitStatus;
+        if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+            LockSupport.unpark(node.thread);
+        return true;
+    }
+
+就是unpark头节点Node，并且将该Node放入上述的FIFO双向队列中。
+
+#4 结束语
+
+下一篇就来详细的介绍几个具体的基于AQS的锁的实现。
