@@ -205,4 +205,8 @@ Repeatable reads 的隔离级别：比起Read committed，解决了不可重复�
 
 ![输入图片说明](https://static.oschina.net/uploads/img/201602/29112851_Wsnd.png "在这里输入图片标题")
 
+同时如下的更新语句也是当前读
+
+	update t set key=2 where id>3
+
 
