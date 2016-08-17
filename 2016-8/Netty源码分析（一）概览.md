@@ -2,7 +2,8 @@
 
 # 1 目录
 
-[Netty概览]()
+-	[Netty概览](http://my.oschina.net/pingpangkuangmo/blog/734051)
+-	[EventLoopGroup介绍](http://my.oschina.net/pingpangkuangmo/blog/734051)
 
 # 2 概览
 
@@ -56,6 +57,9 @@ EventLoopGroup继承了EventExecutorGroup，EventExecutorGroup也是EventExecuto
 
 netty中很多任务都是异步执行的，一旦当前线程要对某个EventLoop执行相关操作，如注册Channel到某个EventLoop，如果当前线程和所要操作的EventLoop内部的线程不是同一个，则当前线程就仅仅向EventLoop提交一个注册任务，对外返回一个ChannelFuture。
 
+总结：EventLoopGroup含有上述2种功能，它更多的是一个集合，但是具体的功能实现还是选择内部的一个item元素来执行相关任务。
+这里的内部item元素通常即实现了EventLoop，又实现了EventExecutor，如NioEventLoop等
+
 ## 2.3 ChannelPipeline介绍
 
 上述EventLoopGroup可以将一个Channel注册到内部的一个EventLoop的Selector上，然后对于这个Channel的相关读写等事件，Netty专门设计了一个ChannelPipeline来进行处理。每一个Channel都有一个ChannelPipeline来处理该Channel的读写等事件。
@@ -89,5 +93,26 @@ bind方法返回的是一个ChannelFuture，从上面我们也知道该过程是
 
 每一个Channel对象都有一个CloseFuture closeFuture对象，上述closeFuture方法并不是去执行close方法而是获取到这个CloseFuture closeFuture对象，然后调用它的sync方法即等待这个Future的结束。一般正常情况下是不会调用这个Future的结束方法的，只是在上述过程或者其他过程出现问题的时候，如注册到EventLoop失败等才会去调用这个Feture的结束方法，所以正常情况下主线程会一直阻塞在CloseFuture closeFuture的sync方法上。
 
-# 3 总结
+# 3 误区
 
+上述的bossGroup的创建问题。
+
+我们都知道bossGroup是用来accept连接，然后将连接绑定到workerGroup中的，一般情况下bossGroup设置线程数为1即可（基本只能为1），我们同时知道Ractor模型中可以使用多个Acceptor线程来执行accept操作，加快accept的速度。
+
+如果你想加快accept的速度，想开启多线程来accept，这时候想设置bossGroup的线程数为多个的话，就大错特错了，是根本没效果的。
+
+结合上面的原理，只有在bind端口的时候才会创建一个ServerSocketChannel，然后注册到bossGroup内部的一个EventLoop中，仍然是单线程负责ServerSocketChannel的accept工作，而bossGroup中的多线程仅仅是为bind多个端口服务的。
+
+我们来看下tomcat是如何允许多个Acceptor线程来执行accept操作的：
+
+-	1 创建了一个ServerSocketChannel serverSock，并bind到某个端口
+
+-	2 开启多个Acceptor线程，每个线程逻辑都是执行上述serverSock的accept方法
+
+没有使用Selector来执行accept操作，可以多线程并发执行上述serverSock的accept方法。
+
+一旦使用了Selector，基本上就相当于将ServerSocketChannel serverSock绑定到了Selector所在线程上了（Selector不是线程安全的，只能在一个线程中被调度执行）
+
+# 4 后续
+
+下一篇就要详细描述下EventLoopGroup了。
