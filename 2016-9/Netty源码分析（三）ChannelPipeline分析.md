@@ -39,6 +39,14 @@ Channel、ChannelHandler、ChannelPipeline三者的关系
 
 这里的isRegistered是指：netty的Channel是否已经注册到了EventLoop中
 
+这里的isActive是指：对客户端来说Channel是否open并且是否已经连接上述服务器端，对服务器端来说是否成功绑定了一个端口并开始监听
+
+2 该Channel的配置信息
+
+	ChannelId id()
+	Channel parent()
+	ChannelConfig config()
+
 
 # 4 ChannelHandler接口定义
 
@@ -46,4 +54,3 @@ Channel、ChannelHandler、ChannelPipeline三者的关系
 
 # 6 后续
 
-下一篇就要详细描述下NioEventLoop对于IO事件的处理，即ChannelPipeline的处理流程。
