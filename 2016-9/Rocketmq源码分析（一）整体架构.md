@@ -1,6 +1,6 @@
 # 1 系列
 
--	[整体架构图]()
+-	[整体架构图](https://my.oschina.net/pingpangkuangmo/blog/753742)
 -	producer端发送消息
 -	broker端接收消息
 -	broker端消息的存储
@@ -56,7 +56,7 @@
 
 ## 4.1 消息的存储
 
-我们知道topic是一类消息的统称，为了提高消息的写入和读取并发能力，将一个topic的消息分散到多个broker上进行管理。kafka上称为分区，而RocketMQ称为队列。
+我们知道topic是一类消息的统称，为了提高消息的写入和读取并发能力，将一个topic的消息进行拆分，可以分散到多个broker中。kafka上称为分区，而RocketMQ称为队列。
 
 对于kafka：为了防止一个分区的消息文件过大，会拆分成一个个固定大小的文件，所以一个分区就对应了一个目录。分区与分区之间是相互隔离的。
 
@@ -66,24 +66,37 @@
 
 看下这里给出的RocketMQ的日志文件图片[分布式开放消息系统(RocketMQ)的原理与实践](http://www.jianshu.com/p/453c6e7ff81c#)
 
-![输入图片说明](https://static.oschina.net/uploads/img/201609/29165159_qLL0.png "在这里输入图片标题")
+![RocketMQ的消息存储](https://static.oschina.net/uploads/img/201609/29165159_qLL0.png "RocketMQ的消息存储")
 
 这里我自己认为RocketMQ的做法还是值得商榷的，全部的topic往一个文件里面写，每次写入要进行加锁控制，本来不相干的topic却相互影响，就降低的写入的效率。这个锁的粒度有点大了，我自己认为应该一个队列对应一个CommitLog，这样做就是减少锁的粒度问题。
 
 ## 4.1 Prdocuer端的服务发现
 
+就是Producer端如何来发现新的broker地址。
+
 对于kafka来说：Producer端需要配置broker的列表地址，Producer也从一个broker中来更新broker列表地址（从中发现新加入的broker）。
 
-对于RocketMQ来说：Producer端需要Name Server的列表地址，同时还可以定时从一个HTTP地址中来获取最新的Name Server的列表地址，然后从其中的一台Name Server来获取全部的路由信息，包含broker的信息。
+对于RocketMQ来说：Producer端需要Name Server的列表地址，同时还可以定时从一个HTTP地址中来获取最新的Name Server的列表地址，然后从其中的一台Name Server来获取全部的路由信息，从中发现新的broker。
 
+## 4.1 消费offset的存储
 
+对于kafka：Consumer将消费的offset定时存储到ZooKeeper上，利用ZooKeeper保障了offset的高可用问题。
 
-## 4.1 offset的存储
+对于RocketMQ:Consumer将消费的offset定时存储到broker所在的机器上，这个broker优先是master，如果master挂了的话，则会选择slave来存储，broker也是将这些offset定时刷新到本地磁盘上，同时slave会定时的访问master来获取这些offset。
 
 ## 4.2 consumer负载均衡
 
-## 4.3 NameServer和ZooKeeper
+对于负载均衡，在出现分区或者队列增加或者减少的时候、Consumer增加或者减少的时候都会进行reblance操作。
 
+对于RocketMQ:客户端自己会定时对所有的topic的进行reblance操作，对于每个topic，会从broker获取所有Consumer列表，从broker获取队列列表，按照负载均衡策略，计算各自负责哪些队列。这种就要求进行负载均衡的时候，各个Consumer获取的数据是一致的，不然不同的Consumer的reblance结果就不同。
+
+对于kafka：kafka之前也是客户端自己进行reblance，依靠ZooKeeper的监听，来监听上述2种情况的出现，一旦出现则进行reblance。现在的版本则将这个reblance操作转移到了broker端来做，不但解决了RocketMQ上述的问题，同时减轻了客户端的操作，是的客户端更加轻量级，减少了和其他语言集成的工作量。详细见这篇文章[Kafka设计解析（四）：Kafka Consumer解析](http://www.infoq.com/cn/articles/kafka-analysis-part-4)
+
+## 4.3 Name Server和ZooKeeper
+
+Name Server和ZooKeeper的作用大致是相同的，从宏观上来看，Name Server做的东西很少，就是保存一些运行数据，Name Server之间不互连，这就需要broker端连接所有的Name Server，运行数据的改动要发送到每一个Name Server来保证运行数据的一致性（这个一致性确实有点弱），这样就变成了Name Server很轻量级，但是broker端就要做更多的东西了。
+
+而ZooKeeper呢，broker只需要连接其中的一台机器，运行数据分发、一致性都交给了ZooKeeper来完成。
 
 目前先就这几个大的组件进行简单的对比，后续会对某些细节进行详细说明。
 
