@@ -39,7 +39,7 @@
 
 来看下kafka的整体架构图
 
-![输入图片说明](https://static.oschina.net/uploads/img/201609/28214348_P48g.png "在这里输入图片标题")
+![kafka的整体架构图](https://static.oschina.net/uploads/img/201609/28214348_P48g.png "kafka的整体架构图")
 
 来看看他们之间的连接关系
 
