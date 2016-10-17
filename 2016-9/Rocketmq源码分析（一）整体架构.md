@@ -1,15 +1,15 @@
 # 1 系列
 
 -	[整体架构图](https://my.oschina.net/pingpangkuangmo/blog/753742)
--	producer端发送消息
+-	[producer端发送消息](https://my.oschina.net/pingpangkuangmo/blog/755579)
 -	broker端接收消息
 -	broker端消息的存储
 -	consumer消费消息
 -	分布式事务的实现
 -	定时消息的实现
--	关于顺序消费
--	关于重复消息
--	关于高可用
+-	关于顺序消费话题
+-	关于重复消息话题
+-	关于高可用话题
 
 # 2 整体架构图
 
