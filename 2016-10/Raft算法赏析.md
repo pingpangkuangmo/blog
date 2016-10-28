@@ -221,3 +221,7 @@ follower在接收AppendEntries RPC的时候是幂等操作
 #5 后续计划
 
 后续会再详细分析下ZooKeeper中的ZAB协议实现，然后对比下raft，有哪些设计上的不同点。
+
+欢迎关注微信公众号：乒乓狂魔
+
+![微信公众号](https://static.oschina.net/uploads/img/201610/27190856_Y0pM.jpg "微信公众号")
