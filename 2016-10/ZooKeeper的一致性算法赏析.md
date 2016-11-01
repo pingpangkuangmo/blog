@@ -152,7 +152,7 @@ leader选举过程要关注的要点：
 
 	follower会向leader发送一个Leader.FOLLOWERINFO信息，包含自己的peerEpoch信息
 
-	leader的LearnerHandler会获取到上述peerEpoch信息，从中选出一个最大的peerEpoch，然后加1作为新的peerEpoch。
+	leader的LearnerHandler会获取到上述peerEpoch信息，leader从中选出一个最大的peerEpoch，然后加1作为新的peerEpoch。
 
 	然后leader的所有LearnerHandler会向各自的follower发送一个Leader.LEADERINFO信息，包含上述新的peerEpoch
 
@@ -181,7 +181,7 @@ leader选举过程要关注的要点：
 
 	LearnerHandler还会从leader的toBeApplied数据中将大于该LearnerHandler中的lastProcessedZxid的议案进行发送和提交（toBeApplied是已经被确认为提交的）
 
-	LearnerHandler还会从leader的outstandingProposals中大于该LearnerHandler中的lastProcessedZxid的议案进行发送，不提交（outstandingProposals是还没被被确认为提交的）
+	LearnerHandler还会从leader的outstandingProposals中大于该LearnerHandler中的lastProcessedZxid的议案进行发送，但是不提交（outstandingProposals是还没被被确认为提交的）
 
 -	5 将LearnerHandler加入到正式follower列表中
 
@@ -209,13 +209,15 @@ leader选举过程要关注的要点：
 
 # 3 特殊情况的注意点
 
-## 3.1 事务日志和快照日志的持久化
+## 3.1 事务日志和快照日志的持久化和恢复
+
+先来看看持久化过程：
 
 -	Broadcast过程的持久化
 
 	leader针对每次事务请求都会生成一个议案，然后向所有的follower发送该议案
 
-	follower接收到该议案后，所做的操作就是将该议案记录到事务日志中，每当记满100000个，则事务日志执行flush操作，同时开启一个新的文件来记录事务日志
+	follower接收到该议案后，所做的操作就是将该议案记录到事务日志中，每当记满100000个（默认），则事务日志执行flush操作，同时开启一个新的文件来记录事务日志
 
 	同时会执行内存树的快照，snapshot.[lastProcessedZxid]作为文件名创建一个新文件，快照内容保存到该文件中
 
@@ -224,30 +226,66 @@ leader选举过程要关注的要点：
 	一旦leader过半的心跳检测失败，则执行shutdown方法，在该shutdown中会对事务日志进行flush操作
 
 
-## 3.2 重新选举leader时对之前数据的处理
+再来说说恢复：
 
-### 3.2.1 重新选举前
+-	事务快照的恢复
 
-造成重新选举有如下2种情况
+	第一：会在事务快照文件目录下找到最近的100个快照文件，并排序，最新的在前
 
--	Leader挂了
+	第二：对上述快照文件依次进行恢复和验证，一旦验证成功则退出，否则利用下一个快照文件进行恢复。恢复完成更新最新的lastProcessedZxid
 
--	Leader得不到半数的follower支持
+-	事务日志的恢复
 
+	第一：从事务日志文件目录下找到zxid大于等于上述lastProcessedZxid的事务日志
 
-### 3.2.2 重新选举
+	第二：然后对上述事务日志进行遍历，应用到ZooKeeper的内存树中，同时更新lastProcessedZxid
 
-raft对于entry是按照Index来进行处理的，一旦开启一个新的leader，新leader是需要处理前一个term的未提交的entry的
-而zookeeper是按照epoch+index来进行处理的，一旦开启一个新的leader，新leader是不需要处理前一个term的未提交的entry的
+	第三：同时将上述事务日志存储到committedLog中，并更新maxCommittedLog、minCommittedLog
 
-## 3.3 follower挂了之后又重启的恢复过程
+由此我们可以看到，在初始化恢复的时候，是会将所有最新的事务日志作为已经commit的事务来处理的
 
-## 3.4 同步follower失败的情况
+也就是说**这里面可能会有部分事务日志还没真实提交，而这里全部当做已提交来处理**。这个处理简单粗暴了一些，而raft对老数据的恢复则控制的更加严谨一些。
+
+## 3.2 follower挂了之后又重启的恢复过程
+
+一旦leader挂了，上述leader的2个集合
+
+-	ConcurrentMap<Long, Proposal> outstandingProposals
+
+-	ConcurrentLinkedQueue<Proposal> toBeApplied
+
+就无效了。他们并不在leader恢复的时候起作用，而是在系统正常执行，而某个follower挂了又恢复的时候起作用。
+
+我们可以看到在上述2.3的恢复过程中，会首先进行快照日志和事务日志的恢复，然后再补充leader的上述2个数据中的内容。
+
+## 3.3 同步follower失败的情况
+
+目前leader和follower之间的同步是通过BIO方式来进行的，一旦该链路出现异常则会关闭该链路，重新与leader建立连接，重新同步最新的数据
 
 ## 3.5 对client端是否一致
 
-客户端收到OK回复，会不会丢失数据？
-客户端没有收到OK回复，会不会多存储数据？
+-	客户端收到OK回复，会不会丢失数据？
+-	客户端没有收到OK回复，会不会多存储数据？
+
+客户端如果收到OK回复，说明已经过半复制了，则在leader选举中肯定会包含该请求对应的事务日志，则不会丢失该数据
+
+客户端连接的leader或者follower挂了，客户端没有收到OK回复，目前是可能丢失也可能没丢失，因为服务器端的处理也很简单粗暴，对于未来leader上的事务日志都会当做提交来处理的，即都会被应用到内存树中。
+
+同时目前ZooKeeper的原生客户端也没有进行重试，服务器端也没有对重试进行检查。这一部分到下一篇再详细探讨与raft的区别
+
+# 4 未完待续
+
+本文有很多细节，难免可能疏漏，还请指正。
+
+## 4.1 问题
+
+这里留个问题供大家思考下：
+
+raft每次执行AppendEntries RPC的时候，都会带上当前leader的新term，来防止旧的leader的旧term来执行相关操作，而ZooKeeper的peerEpoch呢？达到防止旧leader的效果了吗？它的作用是干什么呢？
+
+## 4.2 下篇
+
+下一篇就来对比一下raft和zab之间的细微的区别
 
 欢迎关注微信公众号：乒乓狂魔
 
