@@ -137,7 +137,9 @@ leader选举过程要关注的要点：
 
 	如果当前发来的投票的server的状态是FOLLOWING、LEADING状态，则说明leader选举过程已经完成了，则**发过来的投票就是leader的信息**，这里就需要**判断发过来的投票**是否在recvset或者outofelection中过半了
 
-	同时还要检查leader是否给自己发送过投票信息，从投票信息中确认该leader是不是LEADING状态（这一部分还需要仔细推敲下）
+	同时还要检查leader是否给自己发送过投票信息，从投票信息中确认该leader是不是LEADING状态。这个解释如下：
+
+	因为目前leader和follower都是各自检测是否进入leader选举过程。leader检测到未过半的server的ping回复，则leader会进入LOOKING状态，但是follower有自己的检测，感知这一事件，还需要一定时间，在此期间，如果其他server加入到该集群，可能会收到其他follower的过半的对之前leader的投票，但是此时该leader已经不处于LEADING状态了，所以需要这么一个检查来排除这种情况。
 
 
 ## 2.3 Recovery Phase
