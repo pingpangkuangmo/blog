@@ -26,7 +26,7 @@
 
 	-	1.3 加入一个已经完成选举的集群
 
-		怎么发现新的leader？
+		怎么发现已完成选举的leader？
 		
 		加入过程是否对leader处理请求的过程造成阻塞？
 	
@@ -117,10 +117,10 @@ ZooKeeper中的每个server，在某个electionEpoch轮次内，可以投多次�
 
 ## 1.3 加入一个已经完成选举的集群
 
--	1.3.1 如何加入？
+-	1.3.1 怎么发现已完成选举的leader？
 -	1.3.2 加入过程是否阻塞整个请求？
 
-1.3.1 如何加入？
+1.3.1 怎么发现已完成选举的leader？
 
 一个server启动后（该server本来就属于该集群的成员配置之一，所以这里不是新加机器），如何加入一个已经选举完成的集群
 
@@ -145,10 +145,10 @@ ZooKeeper中的每个server，在某个electionEpoch轮次内，可以投多次�
 触发一般有如下2个时机
 
 -	server刚开始启动的时候，触发leader选举
--	leader选举完成之后，谁在检测超时
+-	leader选举完成之后，检测到超时触发，谁来检测？
 
 	-	Raft：目前只是follower在检测。follower有一个选举时间，在该时间内如果未收到leader的心跳信息，则follower转变成candidate，自增term发起新一轮的投票，leader遇到新的term则自动转变成follower的状态
-	-	ZooKeeper：leader和follower都有各自的检测超时方式，leader是检测是否过半follower心跳回复了，follower检测leader是否发送心跳了。一旦leader检测失败，则leader进入LOOKING状态，其他follower过一段时间也会进入LOOKING状态，从而出发新的leader选举。一旦follower检测失败了，则该follower进入LOOKING状态，此时leader和其他follower仍然保持良好，则该follower仍然是去学习上述leader的投票，而不是触发新一轮的leader选举
+	-	ZooKeeper：leader和follower都有各自的检测超时方式，leader是检测是否过半follower心跳回复了，follower检测leader是否发送心跳了。一旦leader检测失败，则leader进入LOOKING状态，其他follower过一段时间因收不到leader心跳也会进入LOOKING状态，从而出发新的leader选举。一旦follower检测失败了，则该follower进入LOOKING状态，此时leader和其他follower仍然保持良好，则该follower仍然是去学习上述leader的投票，而不是触发新一轮的leader选举
 
 # 2 上一轮次的leader
 
@@ -200,9 +200,15 @@ Raft的保守策略更多是因为Raft在leader选举完成之后，没有同步
 
 ## 3.2 日志的连续性问题
 
-在利用一致性算法实现状态机的时候，到底是实现连续性日志好呢还是实现非连续性日志好呢？这个一时半会也很难来回答，先来简单举几个连续性日志的好处吧
+在利用一致性算法实现状态机的时候，到底是实现连续性日志好呢还是实现非连续性日志好呢？
 
--	复制和提交日志的时候，都可以批量进行
+-	如果是连续性日志，则leader在分发给各个follower的时候，只需要记录每个follower目前已经同步的index即可，如Raft
+-	如果是非连续性日志，则leader需要为每个follower单独保存一个队列，用于存放所有的改动，如ZooKeeper，一旦是队列就引入了一个问题即顺序性问题，即follower在和leader进行同步的时候，需要阻塞leader处理写请求，先将follower和leader之间的差异数据先放入队列，完成之后，解除阻塞，允许leader处理写请求，即允许往该队列中放入新的写请求，从而来保证顺序性
+
+还有在复制和提交的时候：
+
+-	连续性日志可以批量进行
+-	非连续性日志则只能一个一个来复制和提交
 
 其他有待后续补充
 
@@ -244,7 +250,7 @@ Raft的保守策略更多是因为Raft在leader选举完成之后，没有同步
 一旦leader发给follower的数据出现超时等异常
 
 -	Raft：会不断重试，并且接口是幂等的
--	ZooKeeper：follower会断开与leader之间的连接，重新加入该集群
+-	ZooKeeper：follower会断开与leader之间的连接，重新加入该集群，加入逻辑前面已经说了
 
 # 4 分区的应对
 
@@ -254,4 +260,4 @@ Raft的保守策略更多是因为Raft在leader选举完成之后，没有同步
 
 含有2台的那部分，则无法提供服务，即只要连接的是这2台机器，都无法执行相关请求。
 
-所以ZooKeeper和Raft在一旦分区发生的情况下是是牺牲了高可用来保证一致性，即CAP理论中的CP。但是在没有分区发生的情况下既能保证高可用又能保证一致性，所以更想说的是所谓的CAP二者取其一，并不是说该系统一直保持CA或者CP或者AP，而是一个会变化的过程。在没有分区出现的情况下，既要保证C又要保证A，在分区出现的情况下，那就需要从C和A中选择一样。ZooKeeper和Raft则都是选择了C。
+所以ZooKeeper和Raft在一旦分区发生的情况下是是牺牲了高可用来保证一致性，即CAP理论中的CP。但是在没有分区发生的情况下既能保证高可用又能保证一致性，所以更想说的是所谓的CAP二者取其一，并不是说该系统一直保持CA或者CP或者AP，而是一个会变化的过程。在没有分区出现的情况下，既可以保证C又可以保证A，在分区出现的情况下，那就需要从C和A中选择一样。ZooKeeper和Raft则都是选择了C。
