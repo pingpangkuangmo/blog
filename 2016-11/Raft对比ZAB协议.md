@@ -1,3 +1,9 @@
+系列文章
+
+-	[Raft算法赏析](https://my.oschina.net/pingpangkuangmo/blog/776714)
+-	[ZooKeeper的一致性算法赏析](https://my.oschina.net/pingpangkuangmo/blog/778927)
+-	[Raft对比ZAB协议](https://my.oschina.net/pingpangkuangmo/blog/782702)
+
 # 0 一致性问题
 
 本篇文章想总结下Raft和ZAB在处理一些一致性问题上的做法，详见之前对这2个算法的描述
@@ -200,10 +206,10 @@ Raft的保守策略更多是因为Raft在leader选举完成之后，没有同步
 
 ## 3.2 日志的连续性问题
 
-在利用一致性算法实现状态机的时候，到底是实现连续性日志好呢还是实现非连续性日志好呢？
+在需要保证顺序性的前提下，在利用一致性算法实现状态机的时候，到底是实现连续性日志好呢还是实现非连续性日志好呢？
 
 -	如果是连续性日志，则leader在分发给各个follower的时候，只需要记录每个follower目前已经同步的index即可，如Raft
--	如果是非连续性日志，则leader需要为每个follower单独保存一个队列，用于存放所有的改动，如ZooKeeper，一旦是队列就引入了一个问题即顺序性问题，即follower在和leader进行同步的时候，需要阻塞leader处理写请求，先将follower和leader之间的差异数据先放入队列，完成之后，解除阻塞，允许leader处理写请求，即允许往该队列中放入新的写请求，从而来保证顺序性
+-	如果是非连续性日志，如ZooKeeper，则leader需要为每个follower单独保存一个队列，用于存放所有的改动，如ZooKeeper，一旦是队列就引入了一个问题即顺序性问题，即follower在和leader进行同步的时候，需要阻塞leader处理写请求，先将follower和leader之间的差异数据先放入队列，完成之后，解除阻塞，允许leader处理写请求，即允许往该队列中放入新的写请求，从而来保证顺序性
 
 还有在复制和提交的时候：
 

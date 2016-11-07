@@ -1,3 +1,9 @@
+系列文章
+
+-	[Raft算法赏析](https://my.oschina.net/pingpangkuangmo/blog/776714)
+-	[ZooKeeper的一致性算法赏析](https://my.oschina.net/pingpangkuangmo/blog/778927)
+-	[Raft对比ZAB协议](https://my.oschina.net/pingpangkuangmo/blog/782702)
+
 # 1 leader选举
 
 -	1.1 刚开始所有server启动都是follower状态
