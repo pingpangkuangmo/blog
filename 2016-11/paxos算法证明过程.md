@@ -70,7 +70,7 @@ acceptor aceept的高议案都是含有value v的，则这些高议案被chosen�
 
 这时候P1是存在另一个问题。如当一个议案被chosen的过程中，server c由于网络原因没有收到上述议案的。之后议案被chosen，如果有另一个新的proposer发起了一个更高的议案同时带上一个不同的value v1，该议案发往server c（没有收到任何议案），根据P1，server c是必须要accept该议案的。也就是说在一个议案被chosen的情况下，该acceptor accept的更高议案的value却不是v，即和P2a是矛盾的。
 
-为了同时保证P1和P2a，我们需要对P2a进一步的限制，就引出了P2c
+为了同时保证P1和P2a，我们需要对P2a进一步的限制，就引出了P2b
 
 # 5 P2b-对proposer提出议案的要求（结果上要求）
 
@@ -112,7 +112,7 @@ P2b对proposer提出的议案做出了要求，但是这个议案怎么来（如
 
 接下来的问题就是：一个proposer如何知道acceptor accept的最大议案的value呢？这就需要proposer先提前去探测下这个最大议案的value，即这时候才引出运作过程中的prepare过程。前面一直在说的是运作过程的accept过程。
 
-# 7 引出prepare过程
+# 7 引出prepare过程和P1a
 
 一个proposer向所有的acceptor发送请求，包含要发送的议案号n，来得知他们当前accept的最大议案的value。该请求就被称为prepare请求
 
@@ -128,6 +128,12 @@ P2b对proposer提出的议案做出了要求，但是这个议案怎么来（如
 	-	7.1.2 还未被accept的议案
 
 	这部分议案是还未到达acceptor，proposer要做的就是不再这些议案全部到达被accept了之后再去选择其中最大议案的value，而是直接让acceptor保证：抛弃这一部分的议案，即承诺此后不再accept 小于n的议案了。从而简化对这部分议案的处理。
+
+	这一部分约束就是对acceptor的accept约束的补充，即
+
+	P1 a . An acceptor can accept a proposal numbered n if it has not responded to a prepare request having a number greater than n
+
+	如果一个acceptor没有对大于n的议案的prepare请求进行响应的前提下，该acceptor才能accept议案n，否则就要拒绝议案n。
 	
 -	7.2 大于议案号n的议案
 
@@ -143,8 +149,14 @@ P2b对proposer提出的议案做出了要求，但是这个议案怎么来（如
 
 -	7.2 大于议案号n的议案
 
-	直接拒绝proposer发送的议案号为n的prepare请求
+	直接拒绝proposer发送的议案号为n的prepare请求。
 
+
+我们一直在说acceptor对于prepare有2个承诺一个应答，其实就是上述7的三个分支。
+
+-	7.1.1分支是应答
+-	7.1.2承诺不再accept小于n的议案
+-	7.2 承诺不再响应小于n的prepare请求
 
 # 9 paxos的整体运作过程
 
