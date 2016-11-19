@@ -54,7 +54,7 @@
 
 	其中follower会不断的向leader发送fetch请求，如果没有数据fetch则被leader阻塞一段时间，等待新数据的来临，一旦来临则解除阻塞，复制数据给follower。
 
-我们来看下当acks=-1时，一次消息写入的整个过程，上述是属性是怎么变化的
+我们来看下当producer的acks=-1时，一次消息写入的整个过程，上述是属性是怎么变化的
 
 -	1.3.1 消息准备写入leader副本，leader副本首先判断当前isr列表是否小于min.insync.replicas，不小于才允许写入。
 
@@ -94,18 +94,34 @@
 
 -	1.4.3 KafkaController向上述相关的broker上发送LeaderAndIsr请求，将新分配的leader、isr、全部副本等信息传给他们。同时将向所有的broker发送UpdateMetadata请求，更新每个broker的缓存的metadata数据。
 
--	1.4.4 
+-	1.4.4 如果是leader副本，更新该分区的leader、isr、所有副本等信息。如果自己之前就是leader，则现在什么操作都不用做。如果之前不是leader，则需将自己保存的所有follower副本的logEndOffsetMetadata设置为UnknownOffsetMetadata，之后等待follower的fetch，就会进行更新
+-	1.4.5 如果是follower副本，更新该分区的leader、isr、所有副本等信息
+
+	**然后将日志截断到自己保存的highWatermarkMetadata位置，即日志的logEndOffsetMetadata等于了highWatermarkMetadata**
+
+	最后创建新的fetch请求线程，向新leader不断发送fetch请求，初次fetch的offset是logEndOffsetMetadata。
+
+**上述重点就是leader副本的日志不做处理，而follower的日志则需要截断到highWatermarkMetadata位置。**
+
+至此，算是简单描述了分区的基本情况，下面就针对上述过程来讨论下kafka分区的高可用和一致性问题。
 
 # 2 消息丢失
 
 哪些场景下会丢失消息？
 
--	即使设置acks=-1，但是isr列表为空，只能选择其他存活的副本。
+-	acks= 0、1，很明显都存在消息丢失的可能。
+
+-	即使设置acks=-1，当isr列表为空，如果unclean.leader.election.enable为true，则会选择其他存活的副本作为新的leader，也会存在消息丢失的问题。
+
+-	即使设置acks=-1，当isr列表为空，如果unclean.leader.election.enable为false，则不会选择其他存活的副本作为新的leader，即牺牲了可用性来防止上述消息丢失问题。
+
 -	即使设置acks=-1，并且选出isr中的副本作为leader的时候，仍然是会存在丢数据的情况的：
 
-	s1 s2 s3是isr列表，s1 leader，一旦某个日志写入到s1 s2 s3，则s1将hw提高，并回复了客户端ok，但是s2 s3的hw可能还没被更新，此时s1挂了，s2当选leader了，s2的日志不变，但是s3就要截断日志了，这时已经回复客户端的日志是没有丢的，因为s2种已经复制了。
+	s1 s2 s3是isr列表，还有其他副本为非isr列表，s1是leader，一旦某个日志写入到s1 s2 s3，则s1将highWatermarkMetadata提高，并回复了客户端ok，但是s2 s3的highWatermarkMetadata可能还没被更新，此时s1挂了，s2当选leader了，s2的日志不变，但是s3就要截断日志了，这时已经回复客户端的日志是没有丢的，因为s2已经复制了。
 
-	但是如果此时s2一旦挂了，s3当选，则s3上就不存在上述日志了。这时候就造成日志丢失了。最主要的是这个截断操作是可能截断了已提交的日志，这样的话，这部分日志就在其他副本中消失了。
+	但是如果此时s2一旦挂了，s3当选，则s3上就不存在上述日志了（前面s2当选leader的时候s3已经将日志截断了），这时候就造成日志丢失了。
+
+	最主要的是这个截断操作是可能截断了已提交的日志，这样的话，这部分日志就在其他副本中消失了。
 
 	那zab和raft有没有这种问题呢？他们是如何解决和规避的呢？
 
@@ -134,8 +150,6 @@
 	-	在写入的时候，如果isr列表数小于2，则无法写入，算是牺牲可用性来保证一致性吧
 	-	在producer写入之后等待响应的时候，也会检查是否小于minIsr，小于的话则NOT_ENOUGH_REPLICAS_AFTER_APPEND
 	
-	
-
 
 -	2 minIsr在什么时候用？
 -	3 kafka是分区内有序的，zookeeper是全局有序的，因为kafka是多写入，而zookeeper是单写入的
