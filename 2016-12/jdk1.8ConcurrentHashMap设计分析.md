@@ -107,13 +107,13 @@ ConcurrentHashMap有3个参数：
 
 -	segment的个数即ssize
 
-	取大于等于并发级别的最小的2的指数。如concurrencyLevel=16，那么sszie=16,如concurrencyLevel=10，那么ssize=16
+	取大于等于并发级别的最小的2的幂次。如concurrencyLevel=16，那么sszie=16,如concurrencyLevel=10，那么ssize=16
 
 -	单个segment的初始容量cap
 
 	c=initialCapacity/ssize,并且可能需要+1。如15/7=2，那么c要取3，如16/8=2，那么c取2
 
-	c可能是一个任意值，那么同上述一样，cap取的值就是大于等于c的最下2的指数。最小值要求是2
+	c可能是一个任意值，那么同上述一样，cap取的值就是大于等于c的最下2的幂次。最小值要求是2
 
 -	单个segment的阈值threshold
 
@@ -160,7 +160,7 @@ ConcurrentHashMap有3个参数：
 
 # 3 1.8的ConcurrentHashMap设计
 
-1.8的ConcurrentHashMap摒弃了1.7的设计，而是在1.8HashMap的基础上实现了线程安全的版本，即也是采用**数组+链表+红黑树**的形式。
+1.8的ConcurrentHashMap摒弃了1.7的segment设计，而是在1.8HashMap的基础上实现了线程安全的版本，即也是采用**数组+链表+红黑树**的形式。
 
 数组可以扩容，链表可以转化为红黑树
 
@@ -170,7 +170,7 @@ ConcurrentHashMap有3个参数：
 
 用户可以设置一个初始容量initialCapacity给ConcurrentHashMap
 
-sizeCtl=大于（1.5倍initialCapacity+1）的最小的2的指数。
+sizeCtl=大于（1.5倍initialCapacity+1）的最小的2的幂次。
 
 即initialCapacity=20，则sizeCtl=32,如initialCapacity=24，则sizeCtl=64。
 
@@ -182,12 +182,32 @@ sizeCtl=大于（1.5倍initialCapacity+1）的最小的2的指数。
 
 ![1.8ConcurrentHashMap的put过程](https://static.oschina.net/uploads/img/201612/29180141_DUUU.png "1.8ConcurrentHashMap的put过程")
 
+-	如果数组还未初始化，那么进行初始化，这里会通过一个CAS操作将sizeCtl设置为-1，设置成功的，可以进行初始化操作
+-	根据key的hash值找到对应的桶，如果桶还不存在，那么通过一个CAS操作来设置桶的第一个元素，失败的继续执行下面的逻辑即向桶中插入或更新
+-	如果找到的桶存在，但是桶中第一个元素的hash值是-1，说明此时该桶正在进行迁移操作，这一块会在下面的扩容中详细谈及。
+-	如果找到的桶存在，那么要么是链表结构要么是红黑树结构，此时需要获取该桶的锁，在锁定的情况下执行链表或者红黑树的插入或更新
+
+	-	如果桶中第一个元素的hash值大于0，说明是链表结构，则对链表插入或者更新
+	-	如果桶中的第一个元素类型是TreeBin，说明是红黑树结构，则按照红黑树的方式进行插入或者更新
+-	在锁的保护下插入或者更新完毕后，如果是链表结构，需要判断链表中元素的数量是否超过8（默认），一旦超过就要考虑进行数组扩容或者是链表转红黑树
+
+下面就来重点看看这个扩容过程
+
+## 3.3 扩容过程
+
+一旦链表中的元素个数超过了8个，那么可以执行数组扩容或者链表转为红黑树，这里依据的策略跟HashMap依据的策略是一致的。
+
+当数组长度还未达到64个时，优先数组的扩容，否则选择链表转为红黑树。
+
+源码如下所示：
+
+![扩容或者链表转红黑树](https://static.oschina.net/uploads/img/201612/30174822_IGdO.png "扩容或者链表转红黑树")
+
+重点来看看这个扩容过程
 
 
 
-## 3.3 get过程
-
-## 3.4 扩容过程
+## 3.4 get过程
 
 # 4 问题分析
 
