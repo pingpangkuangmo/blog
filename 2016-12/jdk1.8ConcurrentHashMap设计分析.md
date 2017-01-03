@@ -95,7 +95,7 @@ ConcurrentHashMap是线程安全，通过分段锁的方式提高了并发度。
 
 虽然Segment的个数是不能扩容的，但是单个Segment里面的数组是可以扩容的。
 
-## 1.1 整体概览
+## 2.1 整体概览
 
 ConcurrentHashMap有3个参数：
 
@@ -121,7 +121,7 @@ ConcurrentHashMap有3个参数：
 
 所以默认情况下，segment的个数sszie=16,每个segment的初始容量cap=2，单个segment的阈值threshold=1
 
-## 1.2 put过程
+## 2.2 put过程
 
 -	首先根据key计算出一个hash值，找到对应的Segment
 -	调用Segment的lock方法，为后面的put操作加锁
@@ -136,7 +136,7 @@ ConcurrentHashMap有3个参数：
 
 ![1.7ConcurrentHashMap的put过程2](https://static.oschina.net/uploads/img/201612/29161907_hI3n.png "1.7ConcurrentHashMap的put过程2")
 
-## 1.3 扩容过程
+## 2.3 扩容过程
 
 这个扩容是在Segment的锁的保护下进行扩容的，不需要关注并发问题。
 
@@ -148,7 +148,7 @@ ConcurrentHashMap有3个参数：
 
 然后对开始到lastRun部分的元素，重新计算下设置到newTable中，每次都是将当前元素作为newTable的首元素，之前老的链表作为该首元素的next部分。
 
-## 1.4 get过程
+## 2.4 get过程
 
 -	根据key计算出对应的segment
 -	再根据key计算出对应segment中数组的index
@@ -213,7 +213,9 @@ sizeCtl=大于（1.5倍initialCapacity+1）的最小的2的幂次。
 
 -	问题1：当前线程如何感知其他线程也在参与迁移工作？
 
-	靠sizeCtl的值，它初始值是一个负值=(rs << RESIZE_STAMP_SHIFT) + 2)，每当一个线程参与进来执行迁移工作，则该值进行CAS自增，该线程的任务执行完毕要退出时对该值进行CAS自减操作，所以当sizeCtl的值等于上述初值则说明了此时未有其他线程还在执行迁移工作，可以去执行收尾工作了
+	靠sizeCtl的值，它初始值是一个负值=(rs << RESIZE_STAMP_SHIFT) + 2)，每当一个线程参与进来执行迁移工作，则该值进行CAS自增，该线程的任务执行完毕要退出时对该值进行CAS自减操作，所以当sizeCtl的值等于上述初值则说明了此时未有其他线程还在执行迁移工作，可以去执行收尾工作了。见如下代码
+
+	![部分迁移工作结束判断](https://static.oschina.net/uploads/img/201701/03102615_o8GS.png "部分迁移工作结束判断")
 
 -	问题2：任务按照何规则进行分片？
 
@@ -223,15 +225,114 @@ sizeCtl=大于（1.5倍initialCapacity+1）的最小的2的幂次。
 
 -	问题3：如何记录目前已经分出去的任务？
 
-	ConcurrentHashMap含有一个属性transferIndex（初值为最后一个桶），表示从transferIndex开始到后面所有的桶的迁移任务已经被分配出去了。所以每次线程领取扩容任务，则需要对该属性进行CAS的减操作，即一般是transferIndex-stride
+	ConcurrentHashMap含有一个属性transferIndex（初值为最后一个桶），表示从transferIndex开始到后面所有的桶的迁移任务已经被分配出去了。所以每次线程领取扩容任务，则需要对该属性进行CAS的减操作，即一般是transferIndex-stride。
 
+-	问题4：每个线程如何处理分到的部分桶的迁移工作
 
+	第一个获取到分片的线程会创建一个新的数组，容量是之前的2倍。
+
+	遍历自己所分到的桶：
+
+	-	桶中元素不存在，则通过CAS操作设置桶中第一个元素为ForwardingNode，其Hash值为MOVED（-1）,同时该元素含有新的数组引用
+
+		此时若其他线程进行put操作，发现第一个元素的hash值为-1则代表正在进行扩容操作（并且表明该桶已经完成扩容操作了，可以直接在新的数组中重新进行hash和插入操作），该线程就可以去参与进去，或者没有任务则不用参与，此时可以去直接操作新的数组了
+
+	-	桶中元素存在且hash值为-1，则说明该桶已经被处理了（本不会出现多个线程任务重叠的情况，这里主要是该线程在执行完所有的任务后会再次进行检查，再次核对）
+
+	-	桶中为链表或者红黑树结构，则需要获取桶锁，防止其他线程对该桶进行put操作，然后处理方式同HashMap的处理方式一样，对桶中元素分为2类，分别代表当前桶中和要迁移到新桶中的元素。设置完毕后代表桶迁移工作已经完成，旧数组中该桶可以设置成ForwardingNode了
+
+下面来看下详细的代码：
+
+![扩容代码](https://static.oschina.net/uploads/img/201701/03103705_Nzg1.png "扩容代码")
 
 ## 3.4 get过程
+
+-	根据k计算出hash值，找到对应的数组index
+-	如果该index位置无元素则直接返回null
+-	如果该index位置有元素
+
+	-	如果第一个元素的hash值小于0，则该节点可能为ForwardingNode或者红黑树节点TreeBin
+
+		如果是ForwardingNode（表示当前正在进行扩容），使用新的数组来进行查找
+		
+		如果是红黑树节点TreeBin，使用红黑树的查找方式来进行查找
+
+	-	如果第一个元素的hash大于等于0，则为链表结构，依次遍历即可找到对应的元素
+
+详细代码如下
+
+![1.8ConcurrentHashMap的get过程](https://static.oschina.net/uploads/img/201701/03115030_wxIm.png "1.8ConcurrentHashMap的get过程")
+
+至此，ConcurrentHashMap主要的操作都粗略的介绍完毕了，其他一些操作靠各位自行去看了。
+
+下面针对一些问题来进行解答
 
 # 4 问题分析
 
 ## 4.1 ConcurrentHashMap读为什么不需要锁？
 
+我们通常使用读写锁来保护对一堆数据的读写操作。读时加读锁，写时加写锁。在什么样的情况下可以不需要读锁呢？
 
-## 4.2 
+如果对数据的读写是一个原子操作，那么此时是可以不需要读锁的。如ConcurrentHashMap对数据的读写，写操作是不需要分2次写的（没有中间状态），读操作也是不需要2次读取的。假如一个写操作需要分多次写，必然会有中间状态，如果读不加锁，那么可能就会读到中间状态，那就不对了。
+
+假如ConcurrentHashMap提供put(key1,value1,key2,value2)，写入的时候必然会存在中间状态即key1写完成，但是key2还未写，此时如果读不加锁，那么就可能读到key1是新数据而key2是老数据的中间状态。
+
+虽然ConcurrentHashMap的读不需要锁，但是需要保证能读到最新数据，所以必须加volatile。即数组的引用需要加volatile，同时一个Node节点中的val和next属性也必须要加volatile。
+
+## 4.2 ConcurrentHashMap是否可以在无锁的情况下进行迁移？
+
+目前1.8的ConcurrentHashMap迁移是在锁定旧桶的前提下进行迁移的，然而并没有去锁定新桶。那么就可能提出如下问题：
+
+-	在某个桶的迁移过程中，别的线程想要对该桶进行put操作怎么办？
+
+	一旦某个桶在迁移过程中了，必然要获取该桶的锁，所以其他线程的put操作要被阻塞，一旦迁移完毕，该桶中第一个元素就会被设置成ForwardingNode节点，所以其他线程put时需要重新判断下桶中第一个元素是否被更改了，如果被改了重新获取重新执行逻辑，如下代码
+
+	![迁移过程中的阻塞](https://static.oschina.net/uploads/img/201701/03152150_CxU7.png "迁移过程中的阻塞")
+
+-	某个桶已经迁移完成（其他桶还未完成），别的线程想要对该桶进行put操作怎么办？
+
+	该线程会首先检查是否还有未分配的迁移任务，如果有则先去执行迁移任务，如果没有即全部任务已经分发出去了，那么此时该线程可以直接对新的桶进行插入操作（映射到的新桶必然已经完成了迁移，所以可以放心执行操作）
+
+从上面看到我们在迁移的时候还是需要对旧桶锁定的，能否在无锁的情况下实现迁移？
+
+可以参考参考这篇论文[Split-Ordered Lists: Lock-Free Extensible Hash Tables](http://people.csail.mit.edu/shanir/publications/Split-Ordered_Lists.pdf)
+
+一旦扩容就涉及到迁移桶中元素的操作，将一个桶中的元素迁移到另一个桶中的操作不是一个原子操作，所以需要在锁的保护下进行迁移。如果扩容操作是移动桶的指向，那么就可以通过一个CAS操作来完成扩容操作。上述Split-Ordered Lists就是把所有元素按照一定的顺序进行排列。该list被分成一段一段的，每一段都代表某个桶中的所有元素。每个桶中都有一个指向第一个元素的指针，如下图结构所示：
+
+![Split-Ordered Lists](https://static.oschina.net/uploads/img/201701/03160126_OFsv.png "Split-Ordered Lists")
+
+每一段其实也是分成2类的，如同前面所说的HashMap在扩容是分成2类的情况是一样的，此时Split-Ordered Lists在扩容时就只需要将新桶的指针指向这2类的分界点即可。
+
+这一块之后再详细说明吧。
+
+## 4.3 ConcurrentHashMap曾经的弱一致性
+
+具体详见这篇针对老版本的ConcurrentHashMap的说明文章[为什么ConcurrentHashMap是弱一致的](http://ifeve.com/concurrenthashmap-weakly-consistent/)
+
+文中已经解释到：对数组的引用是volatile来修饰的，但是数组中的元素并不是。即读取数组的引用总是能读取到最新的值，但是读取数组中某一个元素的时候并不一定能读到最新的值。所以说是弱一致性的。
+
+我觉得这个只需要稍微改动下就可以实现强一致性：
+
+-	对于新加的key，通过写入到链表的末尾即可。因为一个元素的next属性是volatile的，可以保证写入后立马看的到，如下1.8的方式
+
+-	或者对数组中元素的更新采用volatile写的方式，如下1.7的形式
+
+但是现在1.7版本的ConcurrentHashMap对于数组中元素的写也是加了volatile的，如下代码
+
+![1.7版本的ConcurrentHashMap对于数组元素的写](https://static.oschina.net/uploads/img/201701/03150220_mPOj.png "1.7版本的ConcurrentHashMap对于数组元素的写")
+
+1.8的方式就是：直接将新加入的元素写入next属性（含有volatile修饰）中而不是修改桶中的第一个元素。
+
+![1.8版本的ConcurrentHashMap的volatile写](https://static.oschina.net/uploads/img/201701/03151112_2IxR.png "1.8版本的ConcurrentHashMap的volatile写")
+
+所以在1.7和1.8版本的ConcurrentHashMap中不再是弱一致性，写入的数据是可以立马本读到的。
+
+# 5 结束语
+
+本篇文章因为涉及的话题众多，难免有疏漏之处，还请指出纠正。更多的问题可以加群讨论，详见这篇加群说明文章[加群指南](https://my.oschina.net/pingpangkuangmo/blog/799041)
+
+**欢迎继续来讨论，越辩越清晰**。
+
+欢迎关注微信公众号：乒乓狂魔
+
+![乒乓狂魔微信公众号](https://static.oschina.net/uploads/img/201610/28090041_LsUp.png "乒乓狂魔微信公众号")
